@@ -24,3 +24,4 @@
 - Then produce a concise plan (or proceed if already planned), listing files to edit/create and acceptance criteria.
 - Avoid starting dev server automatically; prefer npx tsc --noEmit and npm run lint for checks.
 
+

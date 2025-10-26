@@ -58,4 +58,145 @@
   color: var(--text-primary-adaptive, inherit);
 }
 
+/* Glass text utilities for dialog content */
+.glass-text-primary {
+  color: rgba(15, 23, 42, 0.95);
+}
+
+.dark .glass-text-primary {
+  color: rgba(248, 250, 252, 0.95);
+}
+
+.glass-text-secondary {
+  color: rgba(51, 65, 85, 0.9);
+}
+
+.dark .glass-text-secondary {
+  color: rgba(226, 232, 240, 0.8);
+}
+
+.glass-text-tertiary {
+  color: rgba(71, 85, 105, 0.7);
+}
+
+.dark .glass-text-tertiary {
+  color: rgba(203, 213, 225, 0.6);
+}
+
+/* Glass interactive elements */
+.glass-interactive {
+  transition: all 0.2s ease;
+}
+
+.glass-interactive:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.dark .glass-interactive:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.glass-interactive:active {
+  transform: scale(0.98);
+  background: rgba(255, 255, 255, 0.20);
+}
+
+.dark .glass-interactive:active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Dialog facade background */
+.dialog-facade-bg {
+  background: radial-gradient(1200px 900px at 10% 10%, rgba(255,255,255,0.28), rgba(255,255,255,0) 60%),
+    radial-gradient(1400px 1000px at 80% 20%, rgba(255,255,255,0.20), rgba(255,255,255,0) 65%),
+    linear-gradient(180deg, rgba(255,255,255,0.15), rgba(255,255,255,0));
+  border-radius: 1rem;
+}
+
+.dark .dialog-facade-bg {
+  background: radial-gradient(1200px 900px at 10% 10%, rgba(99,102,241,0.08), rgba(99,102,241,0) 60%),
+    radial-gradient(1400px 1000px at 80% 20%, rgba(139,92,246,0.08), rgba(139,92,246,0) 65%),
+    linear-gradient(180deg, rgba(30,27,75,0.15), rgba(15,23,42,0));
+}
+
+/* Scoped dialog surface color system */
+.glass-dialog-scope {
+  color: var(--glass-fg, inherit);
+}
+
+.glass-dialog-scope .glass-text-primary { color: rgba(15, 23, 42, 0.95); }
+.dark .glass-dialog-scope .glass-text-primary { color: rgba(248, 250, 252, 0.97); }
+
+.glass-dialog-scope .glass-text-secondary { color: rgba(51, 65, 85, 0.9); }
+.dark .glass-dialog-scope .glass-text-secondary { color: rgba(203, 213, 225, 0.85); }
+
+.glass-dialog-scope .glass-text-tertiary { color: rgba(71, 85, 105, 0.7); }
+.dark .glass-dialog-scope .glass-text-tertiary { color: rgba(148, 163, 184, 0.7); }
+
+/* Inputs and form controls inside glass dialogs */
+.glass-dialog-scope input[type="text"],
+.glass-dialog-scope input[type="number"],
+.glass-dialog-scope input[type="color"],
+.glass-dialog-scope input[type="email"],
+.glass-dialog-scope input[type="password"],
+.glass-dialog-scope textarea,
+.glass-dialog-scope [role="combobox"],
+.glass-dialog-scope .select-trigger,
+.glass-dialog-scope .radio,
+.glass-dialog-scope .switch {
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.20);
+  color: rgba(15, 23, 42, 0.95);
+}
+
+.dark .glass-dialog-scope input[type="text"],
+.dark .glass-dialog-scope input[type="number"],
+.dark .glass-dialog-scope input[type="color"],
+.dark .glass-dialog-scope input[type="email"],
+.dark .glass-dialog-scope input[type="password"],
+.dark .glass-dialog-scope textarea,
+.dark .glass-dialog-scope [role="combobox"],
+.dark .glass-dialog-scope .select-trigger,
+.dark .glass-dialog-scope .radio,
+.dark .glass-dialog-scope .switch {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: rgba(248, 250, 252, 0.96);
+}
+
+.glass-dialog-scope input::placeholder,
+.glass-dialog-scope textarea::placeholder {
+  color: rgba(71, 85, 105, 0.7);
+}
+
+.dark .glass-dialog-scope input::placeholder,
+.dark .glass-dialog-scope textarea::placeholder {
+  color: rgba(148, 163, 184, 0.6);
+}
+
+/* Labels */
+.glass-dialog-scope label { color: rgba(15, 23, 42, 0.9); }
+.dark .glass-dialog-scope label { color: rgba(226, 232, 240, 0.92); }
+
+/* Badges */
+.glass-dialog-scope .badge {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.24);
+  color: rgba(15, 23, 42, 0.95);
+}
+.dark .glass-dialog-scope .badge {
+  background: rgba(255,255,255,0.10);
+  border-color: rgba(255,255,255,0.20);
+  color: rgba(248, 250, 252, 0.96);
+}
+
+/* Select popover items readability over glass */
+.glass-dialog-scope [data-radix-select-content] .radix-select-item,
+.glass-dialog-scope [data-radix-select-content] [data-highlighted] {
+  backdrop-filter: blur(8px);
+}
+
+
 

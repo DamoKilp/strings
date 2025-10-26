@@ -1,6 +1,6 @@
 "use client";
 import React, { useMemo, useRef } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContentGlass, DialogHeaderGlass, DialogFooterGlass, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -164,19 +164,25 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
-      <DialogContent className="relative max-w-[90vw] w-[90vw] h-[90vh] max-h-[90vh] pb-4 overflow-hidden flex flex-col bg-transparent">
-        {/* Facade background layer inside dialog */}
-        <div className="absolute inset-0 -z-10 dialog-facade-bg" />
-        
-        <DialogHeader>
-          <DialogTitle>Drive Mode Settings</DialogTitle>
-        </DialogHeader>
+      <DialogContentGlass className="h-[90vh] max-h-[90vh]">
+        <DialogHeaderGlass>
+          <div>
+            <DialogTitle className="text-lg sm:text-xl font-semibold glass-text-primary">
+              Drive Mode Settings
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm glass-text-secondary mt-1">
+              Configure voice, language, audio output, and safety options
+            </DialogDescription>
+          </div>
+        </DialogHeaderGlass>
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto min-h-0 p-4 sm:p-6">
         {!loaded ? (
           <div className="flex-1 flex items-center justify-center">
-            <div className="text-muted-foreground">Loading settings…</div>
+            <div className="glass-text-secondary">Loading settings…</div>
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto px-6 pb-6">
+          <div className="flex-1 overflow-y-auto">
             <div className="space-y-6 max-w-5xl mx-auto">
               {/* Audio & Voice Settings */}
               <div className="space-y-4">
@@ -343,7 +349,19 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
             </div>
           </div>
         )}
-      </DialogContent>
+        </div>
+        
+        {/* Footer */}
+        <DialogFooterGlass>
+          <Button 
+            variant="glass" 
+            onClick={() => {}}
+            className="glass-small glass-interactive px-6 rounded-xl"
+          >
+            Close
+          </Button>
+        </DialogFooterGlass>
+      </DialogContentGlass>
     </Dialog>
   );
 }

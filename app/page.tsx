@@ -8,7 +8,7 @@ export default function Page() {
       <ChatLayoutOffsets />
       {/* Chat Sidebar (collapsible) */}
       <aside className="h-full">
-        <Sidebar defaultCollapsed={false} />
+        <Sidebar defaultCollapsed={true} />
       </aside>
       {/* Chat Interface */}
       <div className="flex-1 h-full">

@@ -8,7 +8,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContentGlass, DialogHeaderGlass, DialogFooterGlass, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import type { AgentDefinition, AgentPreference } from '@/lib/types';
 import { AgentManagerLayout } from '@/components/chat/agentManager/AgentManagerLayout';
 import { EnabledAgentsList } from '@/components/chat/agentManager/EnabledAgentsList';
@@ -44,22 +44,29 @@ export function AgentManagerDialog({ open, onOpenChange, builtins, initialCustom
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="relative max-w-[90vw] w-[90vw] h-[90vh] max-h-[90vh] pb-4 overflow-hidden flex flex-col bg-transparent">
-        <div className="absolute inset-0 -z-10 dialog-facade-bg" />
-        <DialogHeader>
+      <DialogContentGlass className="h-[90vh] max-h-[90vh]">
+        <DialogHeaderGlass>
           <div className="flex items-center justify-between gap-3">
-            <DialogTitle>Agent Manager</DialogTitle>
+            <div>
+              <DialogTitle className="text-lg sm:text-xl font-semibold glass-text-primary">
+                Agent Manager
+              </DialogTitle>
+              <DialogDescription className="text-xs sm:text-sm glass-text-secondary mt-1">
+                Create and configure custom AI agents
+              </DialogDescription>
+            </div>
             <div className="flex items-center gap-2">
               <Button
-                variant="outline"
-                className="h-9 px-3"
+                variant="glass"
+                className="glass-small glass-interactive h-9 px-3 rounded-xl"
                 onClick={() => setIsGuideOpen(true)}
               >
                 <BookOpen className="mr-2 h-4 w-4" />
                 How to create great agents
               </Button>
               <Button
-                className="premium-gradient-button h-9 px-3"
+                variant="glass"
+                className="glass-small glass-interactive h-9 px-3 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/20 hover:from-blue-500/30 hover:to-blue-600/30"
                 onClick={() => {
                   selectByKey(null as any);
                   try {
@@ -73,7 +80,10 @@ export function AgentManagerDialog({ open, onOpenChange, builtins, initialCustom
               </Button>
             </div>
           </div>
-        </DialogHeader>
+        </DialogHeaderGlass>
+        
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto min-h-0">
         <AgentManagerLayout
           left={(
             <EnabledAgentsList
@@ -155,6 +165,19 @@ export function AgentManagerDialog({ open, onOpenChange, builtins, initialCustom
             </div>
           )}
         />
+        </div>
+        
+        {/* Footer */}
+        <DialogFooterGlass>
+          <Button 
+            variant="glass" 
+            onClick={() => onOpenChange(false)}
+            className="glass-small glass-interactive px-6 rounded-xl"
+          >
+            Close
+          </Button>
+        </DialogFooterGlass>
+        
         {/* Guidance Panel: Prompt engineering + advanced features */}
         <Sheet open={isGuideOpen} onOpenChange={setIsGuideOpen}>
           <SheetContent side="right" className="w-[90vw] sm:max-w-xl">
@@ -242,7 +265,7 @@ EXAMPLES:
             </div>
           </SheetContent>
         </Sheet>
-      </DialogContent>
+      </DialogContentGlass>
     </Dialog>
   );
 }

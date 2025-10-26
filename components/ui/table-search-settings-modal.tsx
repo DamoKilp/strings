@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContentGlass, DialogHeaderGlass, DialogFooterGlass, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Slider } from '@/components/ui/slider';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -293,25 +293,29 @@ export function TableSearchSettingsModal({
         </Tooltip>
       </TooltipProvider>
         
-      <DialogContent className="relative max-w-[90vw] w-[90vw] h-[90vh] max-h-[90vh] pb-4 overflow-hidden flex flex-col bg-transparent">
-        {/* Facade background layer inside dialog */}
-        <div className="absolute inset-0 -z-10 dialog-facade-bg" />
-        
-        <DialogHeader>
+      <DialogContentGlass className="h-[90vh] max-h-[90vh]">
+        <DialogHeaderGlass>
           <div className="flex items-center justify-between gap-3">
-            <DialogTitle>Table Search Settings</DialogTitle>
+            <div>
+              <DialogTitle className="text-lg sm:text-xl font-semibold glass-text-primary">
+                Table Search Settings
+              </DialogTitle>
+              <p className="text-xs sm:text-sm glass-text-secondary mt-1">
+                Configure search scope and result limits
+              </p>
+            </div>
             <div className="flex items-center gap-2">
               <Button
-                variant="outline"
-                className="h-9 px-3"
+                variant="glass"
+                className="glass-small glass-interactive h-9 px-3 rounded-xl"
                 onClick={() => setIsGuideOpen(true)}
               >
                 <BookOpen className="mr-2 h-4 w-4" />
                 How Table Search Works
               </Button>
               <Button
-                variant="outline"
-                className="h-9 px-3"
+                variant="glass"
+                className="glass-small glass-interactive h-9 px-3 rounded-xl"
                 onClick={() => setSettings(currentSettings)}
                 disabled={JSON.stringify(settings) === JSON.stringify(currentSettings)}
               >
@@ -319,7 +323,8 @@ export function TableSearchSettingsModal({
                 Reset
               </Button>
               <Button
-                className="premium-gradient-button h-9 px-3"
+                variant="glass"
+                className="glass-small glass-interactive h-9 px-3 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/20 hover:from-blue-500/30 hover:to-blue-600/30"
                 onClick={handleSave}
               >
                 <Save className="mr-2 h-4 w-4" />
@@ -327,7 +332,10 @@ export function TableSearchSettingsModal({
               </Button>
             </div>
           </div>
-        </DialogHeader>
+        </DialogHeaderGlass>
+        
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto min-h-0">
 
         <TableSearchLayout
           left={(
@@ -784,7 +792,27 @@ export function TableSearchSettingsModal({
             </div>
           )}
         />
-
+        </div>
+        
+        {/* Footer */}
+        <DialogFooterGlass>
+          <Button 
+            variant="glass" 
+            onClick={() => setIsOpen(false)}
+            className="glass-small glass-interactive px-6 rounded-xl"
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="glass"
+            className="glass-small glass-interactive px-6 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/20 hover:from-blue-500/30 hover:to-blue-600/30"
+            onClick={handleSave}
+          >
+            <Save className="mr-2 h-4 w-4" />
+            Apply Settings
+          </Button>
+        </DialogFooterGlass>
+        
         {/* Information Guide Sheet */}
         <Sheet open={isGuideOpen} onOpenChange={setIsGuideOpen}>
           <SheetContent side="right" className="w-[90vw] sm:max-w-xl">
@@ -992,7 +1020,7 @@ export function TableSearchSettingsModal({
             </div>
           </SheetContent>
         </Sheet>
-      </DialogContent>
+      </DialogContentGlass>
     </Dialog>
   );
 }

@@ -15,3 +15,4 @@
 - Root cause, proposed fix, affected files/lines, acceptance criteria
 - If DB-related: SQL and RLS reasoning, test query, and rollback note
 
+

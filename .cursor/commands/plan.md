@@ -19,3 +19,4 @@
 - Stable effects; components < 1500 LOC
 - Supabase SSR via @supabase/ssr only
 
+

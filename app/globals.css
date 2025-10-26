@@ -339,6 +339,8 @@ body {
 /* Chat Page & Input: fixed input at bottom; messages scroll only */
 .chat-page-container {
   @apply h-[100dvh] w-full overflow-hidden;
+  /* Ensure chat content respects the fixed outer rail width */
+  margin-left: var(--outer-rail-width, 64px);
 }
 
 .chat-input-container {

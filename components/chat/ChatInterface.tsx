@@ -140,17 +140,19 @@ export function ChatInterface() {
   const memoizedCodeBlocks = useMemo(() => codeBlocks, [codeBlocks]);
 
   const sortedMessages: ChatMessage[] = useMemo(() => {
-    const idx = new Map(currentMessages.map((m, i) => [m.id, i]));
-    return [...currentMessages].sort((a, b) => {
-      const tA = a.createdAt.getTime();
-      const tB = b.createdAt.getTime();
-      if (Math.floor(tA / 1000) !== Math.floor(tB / 1000)) {
-        return tA - tB;
-      }
-      if (a.role === 'user' && b.role !== 'user') return -1;
-      if (b.role === 'user' && a.role !== 'user') return 1;
-      return (idx.get(a.id)! - idx.get(b.id)!);
+    // Normalize any non-Date createdAt values and sort strictly by timestamp then by original index
+    const withSafeDates = currentMessages.map((m, i) => ({
+      m,
+      i,
+      t: m?.createdAt instanceof Date && !isNaN(m.createdAt.getTime())
+        ? m.createdAt.getTime()
+        : new Date(m?.createdAt as any ?? Date.now()).getTime(),
+    }));
+    withSafeDates.sort((a, b) => {
+      if (a.t !== b.t) return a.t - b.t; // ascending chronological
+      return a.i - b.i; // stable fallback
     });
+    return withSafeDates.map(x => ({ ...x.m, createdAt: new Date(x.t) }));
   }, [currentMessages]);
 
   // Adapt chat content max width based on side panel state: larger when no panel, narrower when open

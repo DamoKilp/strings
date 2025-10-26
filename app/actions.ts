@@ -63,4 +63,13 @@ export const signUpAction = async (formData: FormData) => {
 }
 
 
+export const signOutAction = async () => {
+  const supabase = await createClient()
+  try {
+    await supabase.auth.signOut()
+  } catch {}
+  return { success: true as const }
+}
+
+
 

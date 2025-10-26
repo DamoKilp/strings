@@ -18,3 +18,4 @@
 ### 5) Types
 - Regenerate with Supabase CLI → `lib/database.types.ts`
 
+

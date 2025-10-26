@@ -148,7 +148,7 @@ export function OuterSidebar() {
       <Sheet open={isMobileSheetOpen} onOpenChange={setIsMobileSheetOpen}>
         <SheetTrigger asChild>
           <button
-            className="fixed top-4 left-4 z-[100] flex items-center justify-center w-11 h-11 rounded-full bg-background/80 shadow-lg border border-border backdrop-blur-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            className="fixed top-4 left-4 z-[60] flex items-center justify-center w-11 h-11 rounded-full bg-background/80 shadow-lg border border-border backdrop-blur-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-400"
             aria-label="Open navigation"
           >
             <Menu size={28} />
@@ -396,7 +396,7 @@ export function OuterSidebar() {
 
   // Desktop Sidebar
   return (
-    <nav className="h_full w-16 flex flex-col items-center border-r bg-gray-950 backdrop-blur-sm fixed left-0 top-0 z-50 transition-all duration-300 shadow-sm" style={{ borderColor: 'rgba(255, 255, 255, 0.1)' }}>
+    <nav className="fixed left-0 top-0 bottom-0 w-16 flex flex-col items-center border-r bg-gray-950/95 backdrop-blur-md z-50 transition-all duration-300 shadow-sm" style={{ borderColor: 'rgba(255, 255, 255, 0.1)' }}>
       {/* Logo/Brand - Now with dropdown menu */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

@@ -6,11 +6,11 @@ import React from 'react';
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
-  DialogContent,
+  DialogContentGlass,
   DialogDescription,
-  DialogHeader,
+  DialogHeaderGlass,
+  DialogFooterGlass,
   DialogTitle,
-  DialogFooter,
   DialogClose,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -29,18 +29,14 @@ export function IngestionDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent 
-        forceMount 
-        className="ingestion-dialog-container"
-      >
-        {/* Enhanced Header with Glassmorphism */}
-        <DialogHeader className="ingestion-dialog-header">
-          <div className="dialog-header-content">
-            <div className="dialog-title-section">
-              <DialogTitle className="dialog-title-enhanced">
+      <DialogContentGlass className="max-w-[90vw] w-[90vw] sm:w-[800px] h-[90vh] max-h-[90vh]">
+        <DialogHeaderGlass>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <DialogTitle className="text-lg sm:text-xl font-semibold glass-text-primary">
                 Knowledge Base Management
               </DialogTitle>
-              <DialogDescription className="dialog-description-enhanced">
+              <DialogDescription className="text-xs sm:text-sm glass-text-secondary mt-1">
                 Add documents using scraping, file uploads, or manual input.
               </DialogDescription>
             </div>
@@ -54,12 +50,10 @@ export function IngestionDialog({
               </Button>
             </DialogClose>
           </div>
-          {/* Rainbow accent bar */}
-          <div className="dialog-accent-bar"></div>
-        </DialogHeader>
+        </DialogHeaderGlass>
 
-        {/* Main Content Area */}
-        <div className="ingestion-dialog-body">
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto min-h-0 p-4 sm:p-6">
           <Tabs defaultValue="automatic_scraper" className="ingestion-tabs-container">
             {/* Enhanced Tab List */}
             <TabsList className="ingestion-tabs-list">
@@ -126,17 +120,18 @@ export function IngestionDialog({
           </Tabs>
         </div>
 
-        {/* Enhanced Footer */}
-        <DialogFooter className="ingestion-dialog-footer">
-          <div className="footer-actions">
-            <DialogClose asChild>
-              <Button variant="secondary" className="btn-enhanced btn-secondary">
-                Close
-              </Button>
-            </DialogClose>
-          </div>
-        </DialogFooter>
-      </DialogContent>
+        {/* Footer */}
+        <DialogFooterGlass>
+          <DialogClose asChild>
+            <Button 
+              variant="glass" 
+              className="glass-small glass-interactive px-6 rounded-xl"
+            >
+              Close
+            </Button>
+          </DialogClose>
+        </DialogFooterGlass>
+      </DialogContentGlass>
     </Dialog>
   );
 }

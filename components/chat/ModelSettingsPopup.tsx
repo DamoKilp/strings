@@ -3,7 +3,7 @@
 
 import React from 'react';
 import './ModelSettingsPopup.css';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContentGlass, DialogHeaderGlass, DialogFooterGlass, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
@@ -44,12 +44,18 @@ export function ModelSettingsPopup({ open, onOpenChange }: ModelSettingsPopupPro
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="relative max-w-[min(90vw,56rem)] w-[90vw] h-auto max-h-[90vh] pb-4 overflow-hidden flex flex-col bg-transparent">
-                <div className="absolute inset-0 -z-10 dialog-facade-bg" />
-                <DialogHeader>
-                    <DialogTitle>Model Parameters</DialogTitle>
-                </DialogHeader>
-                <div className="model-settings-container overflow-y-auto flex-1">
+            <DialogContentGlass className="max-w-[min(90vw,56rem)] w-[90vw] h-auto max-h-[90vh]">
+                <DialogHeaderGlass>
+                    <DialogTitle className="text-lg sm:text-xl font-semibold glass-text-primary">
+                        Model Parameters
+                    </DialogTitle>
+                    <DialogDescription className="text-xs sm:text-sm glass-text-secondary mt-1">
+                        Adjust temperature, top-p, penalties, and reasoning level
+                    </DialogDescription>
+                </DialogHeaderGlass>
+                
+                {/* Scrollable content */}
+                <div className="flex-1 overflow-y-auto min-h-0 p-4 sm:p-6">
                     <div className="model-settings-content">
                         <div className="model-parameters-grid">
                         {/* Temperature Control */}
@@ -196,7 +202,18 @@ export function ModelSettingsPopup({ open, onOpenChange }: ModelSettingsPopupPro
                         Reset to Defaults
                     </Button>
                 </div>
-            </DialogContent>
+                
+                {/* Footer */}
+                <DialogFooterGlass>
+                    <Button 
+                        variant="glass" 
+                        onClick={() => onOpenChange(false)}
+                        className="glass-small glass-interactive px-6 rounded-xl"
+                    >
+                        Close
+                    </Button>
+                </DialogFooterGlass>
+            </DialogContentGlass>
         </Dialog>
     );
 }
