@@ -16,16 +16,16 @@
 import { createClient } from '@/utils/supabase/client'
 // Local fallback type definitions for preferences (module not present)
 type PreferenceType = 'ribbon' | 'grid' | 'formatting' | 'view' | 'general' | 'map'
-type PreferenceResult<T = any> = { success: true; data?: T | null; lastModified?: string } | { success: false; error: string }
+type PreferenceResult<T = Record<string, unknown>> = { success: true; data?: T | null; lastModified?: string } | { success: false; error: string }
 type PreferenceSyncOptions = { bypassCache?: boolean }
-type OfflinePreferenceChange = { id: string; type: PreferenceType; tableName?: string; data: any; timestamp: string; operation: 'update' | 'delete' }
-type PreferenceChangeEvent = { type: PreferenceType; tableName?: string; oldValue: any; newValue: any; source: 'local' | 'remote'; timestamp: string }
+type OfflinePreferenceChange = { id: string; type: PreferenceType; tableName?: string; data: Record<string, unknown>; timestamp: string; operation: 'update' | 'delete' }
+type PreferenceChangeEvent = { type: PreferenceType; tableName?: string; oldValue: unknown; newValue: unknown; source: 'local' | 'remote'; timestamp: string }
 type PreferenceChangeListener = (event: PreferenceChangeEvent) => void
 type RibbonPreferences = {
   activeTab: string
   isCollapsed: boolean
   isMinimized: boolean
-  customizations: any[]
+  customizations: Record<string, unknown>[]
 }
 type GridPreferences = {
   columnWidths: Record<string, number>
@@ -37,13 +37,16 @@ type GridPreferences = {
   showHeaders: boolean
   showRowNumbers: boolean
   autoFitColumns: boolean
-  sortStates?: any[]
-  filterStates?: any[]
+  sortStates?: Record<string, unknown>[]
+  filterStates?: Record<string, unknown>[]
   appliedFilters?: Record<string, unknown>
+  showFilterRow?: boolean
   textWrap?: boolean
   autoRowHeight?: boolean
+  defaultRowHeight?: number
   bandedRows?: Record<string, unknown>
   gridColor?: string
+  virtualScrolling?: boolean
 }
 type FormattingPreferences = Record<string, unknown>
 type ViewPreferences = Record<string, unknown>
@@ -232,13 +235,14 @@ const getDefaultPreferences = (): UserPreferencesData => ({
     hiddenColumns: [],
     frozenColumns: 0,
     frozenRows: 0,
+    showGridlines: true,
+    showHeaders: true,
+    showRowNumbers: true,
     autoFitColumns: false,
     sortStates: [],
     filterStates: [],
     appliedFilters: {},
-    showFilterRow: false,
-    showHeaders: true,
-    showRowNumbers: true
+    showFilterRow: false
   }
 })
 
@@ -282,7 +286,7 @@ class IndexedDBManager {
     })
   }
 
-  async get(key: string): Promise<any> {
+  async get(key: string): Promise<Record<string, unknown> | null> {
     if (!this.db) await this.initialize()
     if (!this.db) return null
 
@@ -296,7 +300,7 @@ class IndexedDBManager {
     })
   }
 
-  async set(key: string, data: any, type?: PreferenceType, tableName?: string): Promise<void> {
+  async set(key: string, data: Record<string, unknown>, type?: PreferenceType, tableName?: string): Promise<void> {
     if (!this.db) await this.initialize()
     if (!this.db) return
 
@@ -375,7 +379,7 @@ interface CircuitBreakerState {
 export class UserPreferencesService {
   private static instance: UserPreferencesService | null = null
   private debounceTimers: Map<string, NodeJS.Timeout> = new Map()
-  private cache: Map<string, { data: any; timestamp: number }> = new Map()
+  private cache: Map<string, { data: Record<string, unknown>; timestamp: number }> = new Map()
   private listeners: Set<PreferenceChangeListener> = new Set()
   private indexedDB: IndexedDBManager = new IndexedDBManager()
   private isOnline: boolean = typeof navigator !== 'undefined' ? navigator.onLine : true
@@ -393,7 +397,7 @@ export class UserPreferencesService {
 
   // Circuit breaker to prevent infinite loops and request deduplication
   private circuitBreaker = new Map<string, CircuitBreakerState>()
-  private pendingRequests = new Map<string, Promise<PreferenceResult>>()
+  private pendingRequests = new Map<string, Promise<PreferenceResult<Record<string, unknown>>>>()
   
   // 🔥 TARGETED FIX: Priority-based save system to prevent race conditions
   private prioritySaveQueue = new Map<string, Promise<PreferenceResult>>()
@@ -485,7 +489,7 @@ export class UserPreferencesService {
   /**
    * Record circuit breaker failure
    */
-  private recordCircuitBreakerFailure(key: string, error: any): void {
+  private recordCircuitBreakerFailure(key: string, error: Error | unknown): void {
     const state = this.circuitBreaker.get(key) || {
       isOpen: false,
       failures: 0,
@@ -507,9 +511,11 @@ export class UserPreferencesService {
       )
       state.nextRetry = Date.now() + backoffMs
 
+      const errorMessage = (error instanceof Error && error.message) ? error.message : String(error)
+      const errorCode = (error && typeof error === 'object' && 'code' in error) ? (error.code as string) : undefined
       console.warn(`⚡ Circuit breaker OPENED for ${key} after ${state.failures} failures. Next retry in ${backoffMs}ms`, {
-        error: error?.message || error,
-        errorCode: error?.code,
+        error: errorMessage,
+        errorCode,
         backoffMs,
         nextRetry: new Date(state.nextRetry).toISOString()
       })
@@ -545,9 +551,10 @@ export class UserPreferencesService {
   /**
    * Handle different types of database errors appropriately
    */
-  private handleDatabaseError(error: any, type: PreferenceType, tableName?: string): { shouldTriggerCircuitBreaker: boolean; isRecoverable: boolean } {
-    const errorCode = error?.code
-    const httpStatus = error?.status || error?.statusCode
+  private handleDatabaseError(error: Error | unknown): { shouldTriggerCircuitBreaker: boolean; isRecoverable: boolean } {
+    const errorCode = (error && typeof error === 'object' && 'code' in error) ? (error.code as string) : undefined
+    const errorObj = error && typeof error === 'object' ? error : {} as Record<string, unknown>
+    const httpStatus = (('status' in errorObj && errorObj.status) || ('statusCode' in errorObj && errorObj.statusCode)) as number | undefined
 
     // Categorize errors
     const recoverableErrors = ['PGRST116'] // No rows found - normal for new users
@@ -582,7 +589,7 @@ export class UserPreferencesService {
    * 🚀 NEW: Load multiple preferences in parallel for faster initialization
    * This is the key optimization to reduce post-authentication loading time
    */
-  async loadCriticalPreferences<T = any>(
+  async loadCriticalPreferences<T = Record<string, unknown>>(
     types: PreferenceType[],
     tableName?: string,
     options: PreferenceSyncOptions & { bypassCache?: boolean } = {}
@@ -636,7 +643,7 @@ export class UserPreferencesService {
    * PHASE 1: Enhanced with circuit breaker and request deduplication
    * TARGETED FIX: Added user ID validation to prevent 406 cache errors
    */
-  async getPreferences<T = any>(
+  async getPreferences<T = Record<string, unknown>>(
     type: PreferenceType,
     tableName?: string,
     options: PreferenceSyncOptions & { bypassCache?: boolean } = {}
@@ -648,7 +655,8 @@ export class UserPreferencesService {
       // Pre-auth in-flight coalescing (prevents double-start before userId is known)
       const preKey = `pre|${type}|${tableName || 'global'}`
       if (this.pendingRequests.has(preKey) && !options.bypassCache) {
-        return await this.pendingRequests.get(preKey) as PreferenceResult<T>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return await this.pendingRequests.get(preKey) as any
       }
       let resolvePre: ((value: PreferenceResult<T>) => void) | null = null
       let rejectPre: ((reason?: unknown) => void) | null = null
@@ -657,7 +665,8 @@ export class UserPreferencesService {
         rejectPre = reject
       })
       if (!options.bypassCache) {
-        this.pendingRequests.set(preKey, prePlaceholder as unknown as Promise<PreferenceResult>)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.pendingRequests.set(preKey, prePlaceholder as any)
       }
 
       const supabase = createClient()
@@ -699,19 +708,21 @@ export class UserPreferencesService {
       // 🔥 PHASE 1: Request deduplication (scoped by user and table)
       const requestKey = userId ? `${userId}|${this.getCacheKey(type, tableName)}` : this.getCacheKey(type, tableName)
       if (this.pendingRequests.has(requestKey) && !options.bypassCache) {
-       
-        return await this.pendingRequests.get(requestKey) as PreferenceResult<T>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return await this.pendingRequests.get(requestKey) as any
       }
 
       // Create and store the request promise
       const requestPromise = this.executePreferenceRequest<T>(type, tableName, userId)
-      this.pendingRequests.set(requestKey, requestPromise)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      this.pendingRequests.set(requestKey, requestPromise as any)
       if (!options.bypassCache) {
         // Link preKey placeholder to real promise
         requestPromise
           .then((res) => { if (resolvePre) { resolvePre(res) } })
           .catch((err) => { if (rejectPre) { rejectPre(err as unknown) } })
-        this.pendingRequests.set(preKey, requestPromise as unknown as Promise<PreferenceResult>)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.pendingRequests.set(preKey, requestPromise as any)
       }
 
       // Debug logging moved to executePreferenceRequest to avoid double logs on cache hits
@@ -764,7 +775,8 @@ export class UserPreferencesService {
         this.refreshFromDatabaseThrottled(type, tableName, userId).catch(err => 
           console.warn('Background refresh failed:', err)
         )
-        return { success: true, data: cached }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return { success: true, data: cached as any }
       }
 
       // Get from database with improved duplicate handling
@@ -786,6 +798,9 @@ export class UserPreferencesService {
       
       // Use .maybeSingle() instead of .single() to handle duplicates gracefully
       const { data, error } = await query.maybeSingle()
+      
+      // Type the data result properly
+      const typedData = data as { preferences: Record<string, unknown> } | null
 
       if (error) {
         // FIX 5: Improved error logging with detailed context
@@ -807,7 +822,7 @@ export class UserPreferencesService {
         }
         
         // 🔥 PHASE 1: Enhanced error handling
-        const errorAnalysis = this.handleDatabaseError(error, type, tableName)
+        const errorAnalysis = this.handleDatabaseError(error)
         
         if (errorAnalysis.shouldTriggerCircuitBreaker) {
           this.recordCircuitBreakerFailure(circuitBreakerKey, error)
@@ -838,14 +853,14 @@ export class UserPreferencesService {
         return { success: true, data: defaults as T }
       }
 
-      if (!data) {
+      if (!typedData) {
         const defaults = this.getSystemDefaults(type)
         return { success: true, data: defaults as T }
       }
       // Cache the result
-      await this.saveToLocalStorage(cacheKey, data.preferences)
+      await this.saveToLocalStorage(cacheKey, typedData.preferences)
       
-      return { success: true, data: data.preferences as T }
+      return { success: true, data: typedData.preferences as T }
 
     } catch (error) {
       console.error(`❌ UserPreferencesService: Exception in executePreferenceRequest for ${type}:`, error)
@@ -858,12 +873,14 @@ export class UserPreferencesService {
       const cached = await this.getFromLocalStorage(cacheKey)
       
       if (cached) {
-        return { success: true, data: cached }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return { success: true, data: cached as any }
       }
       
       // Return system defaults as final fallback
       const defaults = this.getSystemDefaults(type)
-      return { success: true, data: defaults as T }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return { success: true, data: defaults as any }
     }
   }
 
@@ -877,6 +894,7 @@ export class UserPreferencesService {
       
       // Call the database function to initialize defaults
       // Note: Function exists in database but not in types yet - cast as any to bypass type check
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (supabase as any).rpc('initialize_user_default_preferences', {
         p_user_id: userId
       })
@@ -902,7 +920,7 @@ export class UserPreferencesService {
   /**
    * Get system default preferences based on type
    */
-  private getSystemDefaults(type: PreferenceType): any {
+  private getSystemDefaults(type: PreferenceType): Record<string, unknown> {
     const allDefaults = getDefaultPreferences()
     
     switch (type) {
@@ -950,7 +968,8 @@ export class UserPreferencesService {
 
       if (!error && data) {
         const cacheKey = this.getCacheKey(type, tableName)
-        await this.saveToLocalStorage(cacheKey, data.preferences)
+        const typedData = data as { preferences: Record<string, unknown> }
+        await this.saveToLocalStorage(cacheKey, typedData.preferences)
       }
     } catch (error) {
       console.warn(`⚠️ UserPreferencesService: Background refresh failed for ${type}:`, error)
@@ -989,9 +1008,11 @@ export class UserPreferencesService {
     
     try {
       // Import the utility function dynamically
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { getProjectScopedTableName } = require('@/app/Projects/dataWorkbench/utils/systemTablePreferenceUtils')
       
       // Get current project ID from project store (unless overridden)
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { useProjectStore } = require('@/app/Projects/dataWorkbench/stores/projectStore')
       const projectId = projectIdOverride || useProjectStore.getState().selectedProjectId
       
@@ -1025,7 +1046,8 @@ export class UserPreferencesService {
 
   async saveRibbonPreferences(data: Partial<RibbonPreferences>, tableName?: string): Promise<PreferenceResult> {
     const current = await this.getRibbonPreferences(tableName)
-    const updated = { ...getDefaultPreferences().ribbon, ...current.data, ...data }
+    const currentData = current.success && current.data ? current.data : {}
+    const updated = { ...getDefaultPreferences().ribbon, ...currentData, ...data }
     return this.savePreferences('ribbon', updated, tableName)
   }
 
@@ -1066,7 +1088,7 @@ export class UserPreferencesService {
       const defaults = getDefaultPreferences().grid
       
       // 3. Enhanced merge logic with proper typing and null safety
-      const currentData = (current.data as GridPreferences) || {}
+      const currentData: GridPreferences = current.success && current.data ? (current.data as GridPreferences) : defaults
       
       // 4. 🔥 ENHANCED: Intelligent merge vs replace logic
       const updated: GridPreferences = this.mergeGridPreferencesIntelligently(defaults, currentData, data)
@@ -1081,7 +1103,7 @@ export class UserPreferencesService {
       if (!this.validateGridPreferences(updated)) {
         console.warn('⚠️ Grid preferences validation failed, attempting recovery...')
         // Attempt recovery by using defaults for invalid fields
-        const recoveredPrefs = { ...defaults, ...data }
+        const recoveredPrefs: GridPreferences = { ...defaults, ...data }
         const result = await this.savePreferences('grid', recoveredPrefs, scopedTableName)
         return result
       }
@@ -1126,7 +1148,7 @@ export class UserPreferencesService {
       
       const current = await this.getGridPreferences(tableName, projectIdOverride)
       const defaults = getDefaultPreferences().grid
-      const currentData = (current.data as GridPreferences) || {}
+      const currentData: GridPreferences = current.success && current.data ? (current.data as GridPreferences) : defaults
       
       let updated: GridPreferences
       
@@ -1182,9 +1204,9 @@ export class UserPreferencesService {
       }
 
       const current = await this.getGridPreferences(tableName, projectId)
-      const currentOrder = Array.isArray(current.data?.columnOrder) ? (current.data!.columnOrder as string[]) : []
+      const currentOrder = (current.success && current.data && Array.isArray(current.data.columnOrder)) ? (current.data.columnOrder as string[]) : []
       const nextOrder = [...currentOrder, ...columnsToAppend.filter(c => !currentOrder.includes(c))]
-      const currentHidden = Array.isArray(current.data?.hiddenColumns) ? (current.data!.hiddenColumns as string[]) : []
+      const currentHidden = (current.success && current.data && Array.isArray(current.data.hiddenColumns)) ? (current.data.hiddenColumns as string[]) : []
       const nextHidden = currentHidden.filter(h => !columnsToAppend.includes(h))
 
       return this.saveGridPreferencesEnhanced(
@@ -1215,6 +1237,7 @@ export class UserPreferencesService {
     
     for (const prop of safeProps) {
       if (data[prop] !== undefined) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (safe as any)[prop] = data[prop]
       }
     }
@@ -1228,7 +1251,8 @@ export class UserPreferencesService {
 
   async saveFormattingPreferences(data: Partial<FormattingPreferences>, tableName?: string): Promise<PreferenceResult> {
     const current = await this.getFormattingPreferences(tableName)
-    const updated = { ...getDefaultPreferences().formatting, ...current.data, ...data }
+    const currentData = current.success && current.data ? current.data : {}
+    const updated = { ...getDefaultPreferences().formatting, ...currentData, ...data }
     return this.savePreferences('formatting', updated, tableName)
   }
 
@@ -1238,7 +1262,8 @@ export class UserPreferencesService {
 
   async saveViewPreferences(data: Partial<ViewPreferences>, tableName?: string): Promise<PreferenceResult> {
     const current = await this.getViewPreferences(tableName)
-    const updated = { ...getDefaultPreferences().view, ...current.data, ...data }
+    const currentData = current.success && current.data ? current.data : {}
+    const updated = { ...getDefaultPreferences().view, ...currentData, ...data }
     return this.savePreferences('view', updated, tableName)
   }
 
@@ -1248,7 +1273,8 @@ export class UserPreferencesService {
 
   async saveGeneralPreferences(data: Partial<GeneralPreferences>): Promise<PreferenceResult> {
     const current = await this.getGeneralPreferences()
-    const updated = { ...getDefaultPreferences().general, ...current.data, ...data }
+    const currentData = current.success && current.data ? current.data : {}
+    const updated = { ...getDefaultPreferences().general, ...currentData, ...data }
     return this.savePreferences('general', updated)
   }
 
@@ -1258,7 +1284,8 @@ export class UserPreferencesService {
 
   async saveMapPreferences(data: Partial<MapPreferences>, tableName?: string): Promise<PreferenceResult> {
     const current = await this.getMapPreferences(tableName)
-    const updated = { ...getDefaultPreferences().map, ...current.data, ...data }
+    const currentData = current.success && current.data ? current.data : {}
+    const updated = { ...getDefaultPreferences().map, ...currentData, ...data }
     return this.savePreferences('map', updated, tableName)
   }
 
@@ -1288,15 +1315,13 @@ export class UserPreferencesService {
     // Batch notifications - only notify once per microtask
     this.notificationTimer = setTimeout(() => {
       const notifyStartTime = performance.now()
-      let listenerCount = 0
       let notificationCount = 0
       
       // Process all pending notifications at once
-      for (const [key, notification] of this.pendingNotifications) {
+      for (const notification of this.pendingNotifications.values()) {
         notificationCount++
         this.listeners.forEach(listener => {
           try {
-            listenerCount++
             listener(notification)
           } catch (error) {
             console.error('Error in preference change listener:', error)
@@ -1332,7 +1357,8 @@ export class UserPreferencesService {
 
 
       // Use the RPC function with proper typing
-      const { data, error } = await supabase.rpc('get_user_preference', {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase.rpc as any)('get_user_preference', {
         p_user_id: user.id,
         p_preference_type: type,
         p_table_name: tableName || 'global'
@@ -1342,18 +1368,20 @@ export class UserPreferencesService {
 
       if (error) {
         console.error('❌ Database get error:', error)
+        const errorMessage = (error instanceof Error && error.message) ? error.message : String(error)
         return {
           success: false,
-          error: error.message || 'Database error'
+          error: errorMessage
         }
       }
 
-      if (!data || data.length === 0) {
+      if (!data || !Array.isArray(data) || data.length === 0) {
        
         return { success: true, data: null }
       }
 
-      const result = data[0]
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = (data as any)[0] as { preferences: Record<string, unknown>; updated_at: string }
       
 
       return {
@@ -1373,6 +1401,7 @@ export class UserPreferencesService {
 
   private async saveToDatabase(
     type: PreferenceType,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: any,
     tableName?: string
   ): Promise<PreferenceResult> {
@@ -1383,11 +1412,9 @@ export class UserPreferencesService {
         return { success: false, error: 'User not authenticated' }
       }
 
-      // Log the size of data being sent to Supabase
-      const dataSize = JSON.stringify(data).length
-     
       // Use the RPC function with proper typing
-      const { data: result, error } = await supabase.rpc('save_user_preference', {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: result, error } = await (supabase.rpc as any)('save_user_preference', {
         p_user_id: user.id,
         p_preference_type: type,
         p_table_name: tableName || 'global',
@@ -1400,10 +1427,13 @@ export class UserPreferencesService {
         throw error
       }
 
-      if (result && result.length > 0 && !result[0].success) {
-        return {
-          success: false,
-          error: result[0].message || 'Save failed'
+      if (result && Array.isArray(result) && result.length > 0) {
+        const saveResult = result[0] as { success: boolean; message?: string }
+        if (!saveResult.success) {
+          return {
+            success: false,
+            error: saveResult.message || 'Save failed'
+          }
         }
       }
 
@@ -1435,7 +1465,7 @@ export class UserPreferencesService {
   // PRIVATE METHODS - LOCAL STORAGE OPERATIONS
   // ==========================================================================
 
-  private async getFromLocalStorage(key: string): Promise<any> {
+  private async getFromLocalStorage(key: string): Promise<Record<string, unknown> | null> {
     try {
       if (typeof window === 'undefined') return null
 
@@ -1458,7 +1488,7 @@ export class UserPreferencesService {
     }
   }
 
-  private async saveToLocalStorage(key: string, data: any): Promise<void> {
+  private async saveToLocalStorage(key: string, data: Record<string, unknown>): Promise<void> {
     const localStorageStartTime = performance.now()
     
     try {
@@ -1503,7 +1533,7 @@ export class UserPreferencesService {
     return tableName ? `${type}_${tableName}` : `${type}_global`
   }
 
-  private getFromCache(key: string): any {
+  private getFromCache(key: string): Record<string, unknown> | null {
     const cached = this.cache.get(key)
     if (!cached) return null
 
@@ -1516,7 +1546,7 @@ export class UserPreferencesService {
     return cached.data
   }
 
-  private setCache(key: string, data: any): void {
+  private setCache(key: string, data: Record<string, unknown>): void {
     this.cache.set(key, {
       data,
       timestamp: Date.now()
@@ -1531,7 +1561,7 @@ export class UserPreferencesService {
    * 🎯 TARGETED FIX: Determine if preference change is critical and needs immediate save
    * Critical changes include sorting, filtering, and other user interaction states
    */
-  private isCriticalPreferenceChange(type: PreferenceType, data: any): boolean {
+  private isCriticalPreferenceChange(type: PreferenceType, data: Record<string, unknown>): boolean {
     // Always treat grid preferences as potentially critical
     if (type === 'grid') {
       // Check if any critical grid properties are being updated
@@ -1554,7 +1584,7 @@ export class UserPreferencesService {
    */
   private async immediateSave(
     type: PreferenceType,
-    data: any,
+    data: Record<string, unknown>,
     tableName?: string
   ): Promise<PreferenceResult> {
     const saveKey = this.getCacheKey(type, tableName)
@@ -1591,9 +1621,8 @@ export class UserPreferencesService {
 
   private debouncedSave(
     type: PreferenceType,
-    data: any,
-    tableName?: string,
-    options: PreferenceSyncOptions = {}
+    data: Record<string, unknown>,
+    tableName?: string
   ): void {
     const key = this.getCacheKey(type, tableName)
     const debugId = `${type}_${tableName || 'global'}_${Date.now()}`
@@ -1655,9 +1684,9 @@ export class UserPreferencesService {
   // PRIVATE METHODS - DEFAULTS
   // ==========================================================================
 
-  private getDefaultsForType(type: PreferenceType): any {
+  private getDefaultsForType(type: PreferenceType): Record<string, unknown> {
     const defaults = getDefaultPreferences()
-    return defaults[type]
+    return (defaults[type] as Record<string, unknown>) || {}
   }
 
   // ==========================================================================
@@ -1786,14 +1815,17 @@ export class UserPreferencesService {
    * Save preferences with debouncing and caching
    * PHASE 2: Enhanced with inheritance cache management
    */
-  async savePreferences(type: PreferenceType, data: any, tableName?: string): Promise<PreferenceResult> {
+  async savePreferences(type: PreferenceType, data: Record<string, unknown>, tableName?: string): Promise<PreferenceResult> {
     try {
       // 🔍 DEBUG: Track save operations
       const debugId = `${type}_${tableName || 'global'}_${Date.now()}`
+      const dataStr = data && typeof data === 'object' ? JSON.stringify(data).substring(0, 200) : ''
+      const sortCount = data && typeof data === 'object' && 'sortStates' in data && Array.isArray(data.sortStates) ? data.sortStates.length : 0
+      const hiddenCount = data && typeof data === 'object' && 'hiddenColumns' in data && Array.isArray(data.hiddenColumns) ? data.hiddenColumns.length : 0
       console.log(`🔄 SAVE START [${debugId}]: ${type} for ${tableName || 'global'}`, {
-        sortStates: data?.sortStates?.length || 0,
-        hiddenColumns: data?.hiddenColumns?.length || 0,
-        data: JSON.stringify(data).substring(0, 200) + '...'
+        sortStates: sortCount,
+        hiddenColumns: hiddenCount,
+        data: dataStr + '...'
       })
 
       // Cache immediately for responsive UI
@@ -1858,7 +1890,7 @@ export class UserPreferencesService {
   private async invalidateCacheForCircuitBreaker(key: string): Promise<void> {
     try {
       // Clear in-memory cache
-      for (const [cacheKey, _] of this.cache) {
+      for (const [cacheKey] of this.cache) {
         if (cacheKey.includes(key) || cacheKey.startsWith('inherited_')) {
           this.cache.delete(cacheKey)
         }
@@ -1926,7 +1958,6 @@ export class UserPreferencesService {
    */
   resetAllCircuitBreakers(): void {
     try {
-      const resetCount = this.circuitBreaker.size
       this.circuitBreaker.clear()
     } catch (error) {
       console.warn('Failed to reset circuit breakers:', error)
@@ -2002,7 +2033,7 @@ export class UserPreferencesService {
     data: Partial<GridPreferences>
   ): GridPreferences {
     // Detect merge vs replace mode
-    const replaceMode = this.detectGridReplaceMode(data, currentData)
+    const replaceMode = this.detectGridReplaceMode(data)
     
     if (replaceMode === 'replace') {
       
@@ -2084,10 +2115,10 @@ export class UserPreferencesService {
    * Based on the completeness and type of data being updated
    */
   private detectGridReplaceMode(
-    data: Partial<GridPreferences>, 
-    currentData: GridPreferences
+    data: Partial<GridPreferences>
   ): 'merge' | 'replace' {
     // If data contains special replace signal
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if ((data as any).__replaceMode === 'replace') {
       return 'replace'
     }

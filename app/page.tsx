@@ -1,3 +1,5 @@
+'use client'
+
 import { ChatInterface } from '@/components/chat/ChatInterface'
 import { Sidebar } from '@/components/sidebarComponents/Sidebar'
 import { ChatLayoutOffsets } from '@/components/chat/ChatLayoutOffsets'
