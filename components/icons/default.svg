@@ -1,0 +1,16 @@
+<svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 60 60" style="enable-background:new 0 0 60 60;" xml:space="preserve">
+ <style type="text/css">
+  .st0{fill:#158D71;}
+	.st1{fill:#011936;}
+ </style>
+ <g>
+  <path class="st0" d="M30,15c0-8.3,6.7-15,15-15s15,6.7,15,15c0,8.3-6.7,15-15,15S30,23.3,30,15z">
+  </path>
+  <path class="st0" d="M0,30h30v15c0,8.3-6.7,15-15,15C6.7,60,0,53.3,0,45V30z">
+  </path>
+  <path class="st1" d="M30,45c0-8.3,6.7-15,15-15s15,6.7,15,15v15H30V45z">
+  </path>
+  <path class="st1" d="M0,15C0,6.7,6.7,0,15,0c8.3,0,15,6.7,15,15c0,8.3-6.7,15-15,15C6.7,30,0,23.3,0,15z">
+  </path>
+ </g>
+</svg>

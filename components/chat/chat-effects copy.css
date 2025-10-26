@@ -1,0 +1,57 @@
+/* Chat streaming visual refinements (2025 best-practice):
+   - .fade-in-up: subtle entrance for new assistant messages
+   - .streaming-fade-mask: bottom fade mask so newly streamed text appears to fade in
+
+   Performance notes:
+   - CSS-only; no JS timers
+   - Uses transform/opacity (GPU-friendly) and mask-image (cheap)
+   - Respect reduced motion preferences
+*/
+
+@keyframes fadeInUp_2025 {
+  0% { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in-up {
+  animation: fadeInUp_2025 220ms ease-out both;
+  will-change: opacity, transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-in-up {
+    animation: none;
+  }
+}
+
+/* Fade in newly appended text at the bottom while streaming.
+   The bottom-most ~28px are gradually revealed as content grows. */
+.streaming-fade-mask {
+  /* WebKit/Blink */
+  -webkit-mask-image: linear-gradient(
+    to top,
+    rgba(0,0,0,0) 0px,
+    rgba(0,0,0,0.7) 14px,
+    rgba(0,0,0,1) 32px
+  );
+  -webkit-mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+
+  /* Standards */
+  mask-image: linear-gradient(
+    to top,
+    rgba(0,0,0,0) 0px,
+    rgba(0,0,0,0.7) 14px,
+    rgba(0,0,0,1) 32px
+  );
+  mask-size: 100% 100%;
+  mask-repeat: no-repeat;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .streaming-fade-mask {
+    /* Keep mask, but users who prefer reduced motion will still benefit from gentle, static fade */
+  }
+}
+
+
