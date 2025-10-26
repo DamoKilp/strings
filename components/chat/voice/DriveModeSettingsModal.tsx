@@ -47,6 +47,7 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
   const testAudioRef = useRef<HTMLAudioElement | null>(null);
   const [isTesting, setIsTesting] = useState(false);
   const [supportedVoices, setSupportedVoices] = useState<string[] | null>(null);
+  const lastVoicesModelRef = useRef<string | null>(null);
   const effectiveModel = activeModel || settings.model || defaults.model;
 
   useEffect(() => {
@@ -75,12 +76,14 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
     let cancelled = false;
     async function loadVoices() {
       try {
-        setSupportedVoices(null);
+        // Avoid refetch if already loaded for this model
+        if (lastVoicesModelRef.current === effectiveModel && Array.isArray(supportedVoices) && supportedVoices.length) return;
+        lastVoicesModelRef.current = effectiveModel;
         const r = await fetch(`/api/openai/realtime/voices?model=${encodeURIComponent(effectiveModel)}`);
         const json = await r.json();
         if (!cancelled && Array.isArray(json?.voices)) {
           setSupportedVoices(json.voices);
-          // If current voice not supported, switch to first available to avoid server fallback surprise
+          // If current voice not supported, switch to first available
           if (json.voices.length && !json.voices.includes(settings.voice)) {
             update({ voice: json.voices[0] });
           }
@@ -91,7 +94,7 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
     }
     loadVoices();
     return () => { cancelled = true };
-  }, [effectiveModel, settings.voice, update]);
+  }, [effectiveModel, settings.voice, update, supportedVoices]);
 
   const handleSystemOutputPicker = async () => {
     try {

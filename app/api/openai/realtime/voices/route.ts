@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
   // Always include 'verse' if empty as a safe default
   const unique = Array.from(new Set(voices.length ? voices : ['verse']))
   cache.set(model, { voices: unique, ts: now })
-  return NextResponse.json({ model, voices: unique, cached: false })
+  return NextResponse.json({ model, voices: unique, cached: false }, { headers: { 'Cache-Control': 'public, max-age=3600' } })
 }
 
 

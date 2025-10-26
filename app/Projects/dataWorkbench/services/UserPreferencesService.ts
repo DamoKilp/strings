@@ -14,24 +14,51 @@
  */
 
 import { createClient } from '@/utils/supabase/client'
-import type {
-  PreferenceType,
-  UserPreferencesData,
-  UserPreferencesRow,
-  UserPreferencesInsert,
-  UserPreferencesUpdate,
-  PreferenceResult,
-  PreferenceSyncOptions,
-  OfflinePreferenceChange,
-  PreferenceChangeEvent,
-  PreferenceChangeListener,
-  RibbonPreferences,
-  GridPreferences,
-  FormattingPreferences,
-  ViewPreferences,
-  GeneralPreferences,
-  MapPreferences
-} from '../types/userPreferencesTypes'
+// Local fallback type definitions for preferences (module not present)
+type PreferenceType = 'ribbon' | 'grid' | 'formatting' | 'view' | 'general' | 'map'
+type PreferenceResult<T = any> = { success: true; data?: T | null; lastModified?: string } | { success: false; error: string }
+type PreferenceSyncOptions = { bypassCache?: boolean }
+type OfflinePreferenceChange = { id: string; type: PreferenceType; tableName?: string; data: any; timestamp: string; operation: 'update' | 'delete' }
+type PreferenceChangeEvent = { type: PreferenceType; tableName?: string; oldValue: any; newValue: any; source: 'local' | 'remote'; timestamp: string }
+type PreferenceChangeListener = (event: PreferenceChangeEvent) => void
+type RibbonPreferences = {
+  activeTab: string
+  isCollapsed: boolean
+  isMinimized: boolean
+  customizations: any[]
+}
+type GridPreferences = {
+  columnWidths: Record<string, number>
+  columnOrder: string[]
+  hiddenColumns: string[]
+  frozenColumns: number
+  frozenRows: number
+  showGridlines: boolean
+  showHeaders: boolean
+  showRowNumbers: boolean
+  autoFitColumns: boolean
+  sortStates?: any[]
+  filterStates?: any[]
+  appliedFilters?: Record<string, unknown>
+  textWrap?: boolean
+  autoRowHeight?: boolean
+  bandedRows?: Record<string, unknown>
+  gridColor?: string
+}
+type FormattingPreferences = Record<string, unknown>
+type ViewPreferences = Record<string, unknown>
+type GeneralPreferences = Record<string, unknown>
+type MapPreferences = Record<string, unknown>
+type UserPreferencesData = {
+  ribbon: RibbonPreferences
+  quickAccess: { items: string[]; position: 'above' | 'below' }
+  formatting: FormattingPreferences
+  view: ViewPreferences
+  grid: GridPreferences
+  general: GeneralPreferences
+  map: MapPreferences
+  rightPane: GridPreferences
+}
 
 // =============================================================================
 // CONSTANTS

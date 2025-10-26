@@ -14,15 +14,7 @@ const nextConfig: NextConfig = {
     });
     return config;
   },
-  experimental: {
-    // Turbopack transform for SVG: treat as React components
-    // See: https://nextjs.org/docs/app/api-reference/next-config-js/turbopack
-    turbo: {
-      rules: {
-        // Use built-in svgr-like loader in turbopack via emotion/compat if required; otherwise leave empty
-      }
-    }
-  }
+  // Remove invalid experimental key; Turbopack configured via top-level `turbopack` above
 };
 
 export default nextConfig;

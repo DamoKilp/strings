@@ -643,10 +643,19 @@ export function ChatProvider({ children }: ChatProviderProps) {
         setState(prev => ({ ...prev, customAgents: customs, agentPreferences: prefs }));
       } catch {}
     };
+    // Initial load only; updates come from 'agents-updated' events
     loadAgents();
-    const handler = () => loadAgents();
+    let timer: any;
+    const handler = () => {
+      // Debounce to avoid burst refetches when multiple prefs change quickly
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { loadAgents(); timer = null; }, 300);
+    };
     if (typeof window !== 'undefined') window.addEventListener('agents-updated', handler);
-    return () => { if (typeof window !== 'undefined') window.removeEventListener('agents-updated', handler); };
+    return () => {
+      if (timer) clearTimeout(timer);
+      if (typeof window !== 'undefined') window.removeEventListener('agents-updated', handler);
+    };
   }, [state.user]);
 
   // --- Action Implementations ---
