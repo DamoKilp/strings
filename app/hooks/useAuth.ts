@@ -105,11 +105,11 @@ const loadUserProfile = async (user: User): Promise<UserProfile | null> => {
       .upsert({
         user_id: user.id,
         email: user.email!,
-        role: UserRole.USER,
+        role: UserRole.USER as unknown as string,
         display_name: user.email || 'User',
         is_active: true,
         updated_at: new Date().toISOString()
-      }, {
+      } as any, {
         onConflict: 'user_id'
       })
       .select()

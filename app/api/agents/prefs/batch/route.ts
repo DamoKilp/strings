@@ -13,13 +13,13 @@ export async function POST(req: NextRequest) {
     if (!Array.isArray(items)) return NextResponse.json({ error: 'Invalid body' }, { status: 400 })
 
     // Prefer RPC for batch upsert if available
-    const { error } = await supabase.rpc('batch_upsert_agent_preferences', {
+    const { error } = await (supabase as any).rpc('batch_upsert_agent_preferences', {
       p_user_id: user.id,
       p_items: items.map((it: any) => ({
         agent_id: it.agentId ?? null,
         agent_builtin_id: it.agentBuiltinId ?? null,
         is_enabled: !!it.isEnabled,
-        sort_order: typeof it.sortOrder === 'number' ? it.sortOrder : null,
+        sort_order: typeof it.sortOrder === 'number' ? it.sortOrder : (null as any),
       })),
     })
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })

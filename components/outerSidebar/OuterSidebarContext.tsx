@@ -3,7 +3,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
-import { useIsMobile } from '@/hooks/use-breakpoint';
+import { useIsMobile } from '@/app/hooks/use-breakpoint';
 
 interface OuterSidebarContextType {
   outerSidebarWidth: number;

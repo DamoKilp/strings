@@ -14,8 +14,21 @@
  */
 
 // ✅ Import from canonical sources - NO DUPLICATION
-import type { ColumnDefinition } from '../../../../types/DynamicTable';
-import type { ValidationRule } from '../services/ColumnValidationService';
+// Local stubs replacing removed DataWorkbench dependencies
+type ColumnDefinition = {
+  name: string;
+  display_name?: string;
+  type: 'text' | 'integer' | 'decimal' | 'boolean' | 'date' | 'timestamp' | 'uuid' | 'image';
+  nullable: boolean;
+  defaultValue?: any;
+  isPrimaryKey?: boolean;
+  isUnique?: boolean;
+};
+type ValidationRule = {
+  field: string;
+  constraint: { type: 'type' | 'pattern'; value?: RegExp; message: string; critical?: boolean };
+  condition?: (col: ColumnDefinition) => boolean;
+};
 import React from 'react';
 
 /**

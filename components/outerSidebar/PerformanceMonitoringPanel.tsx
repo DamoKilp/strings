@@ -5,7 +5,7 @@ import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { usePerformanceMonitoring } from '@/hooks/usePerformanceMonitoring';
+import { usePerformanceMonitoring } from '@/app/hooks/usePerformanceMonitoring';
 
 interface PerformanceMonitoringPanelProps {
   isVisible: boolean;

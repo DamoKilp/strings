@@ -16,9 +16,9 @@ import { supabase } from '@/utils/supabase/client';
 import { Session } from '@supabase/supabase-js';
 import { storageService } from '@/lib/storageService';
 import { clearUserDataOnSignOut, forceRedirectToSignIn } from '@/utils/auth/authUtils';
-import { useTableSearchSettings } from '@/hooks/useTableSearchSettings';
-import { useAuth } from '@/hooks/useAuth';
-import { useProjectStore } from '@/app/Projects/dataWorkbench/stores/projectStore';
+import { useTableSearchSettings } from '@/app/hooks/useTableSearchSettings';
+import { useAuth } from '@/app/hooks/useAuth';
+// Removed DataWorkbench project store dependency
 import type {
   ChatState,
   ChatActions,
@@ -369,7 +369,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const { user: authUser, isLoading: authLoading } = useAuth();
   
   // Get global project context
-  const globalSelectedProjectId = useProjectStore(s => s.selectedProjectId);
+  const globalSelectedProjectId = null as unknown as string | null;
   
   const [state, setState] = useState<ChatState>(initialState);
   
@@ -996,10 +996,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
           const updated = [...prev.currentMessages];
           const stopped = updated[tempIdx];
           const current = typeof stopped.content === 'string' ? stopped.content : '';
+          const safeMeta = (stopped.metadata && typeof stopped.metadata === 'object') ? stopped.metadata as Record<string, unknown> : {};
           updated[tempIdx] = {
             ...stopped,
             content: current + "\n\n[Stopped]",
-            metadata: { ...(stopped.metadata || {}), stopped: true }
+            metadata: { ...safeMeta, stopped: true }
           };
           return { ...prev, isLoadingMessages: false, currentMessages: updated, error: null };
         } else {
@@ -1400,12 +1401,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
       finalUserMessageId = finalizeMessageId(userMessageTempId, finalIsLocal);
       const finalAssistantMessageId = finalizeMessageId(assistantPlaceholderTempId, finalIsLocal);
       const userMessageToSave: ChatMessage = { ...userMessage, id: finalUserMessageId };
+      const safePlaceholderMeta = (assistantPlaceholder.metadata && typeof assistantPlaceholder.metadata === 'object') ? assistantPlaceholder.metadata as Record<string, unknown> : {};
       finalAssistantMessage = {
         ...assistantPlaceholder,
         id: finalAssistantMessageId,
         content: assistantResponseContent.trim() || "[Empty Response]",
         createdAt: new Date(),
-        metadata: { ...(assistantPlaceholder.metadata || {}), modelId: currentModel.id }
+        metadata: { ...safePlaceholderMeta, modelId: currentModel.id }
       };
 
       try {

@@ -17,15 +17,25 @@ import {
   DialogTitle, 
   DialogDescription 
 } from '@/components/ui/dialog';
-import { 
-  tableTemplates, 
-  getTemplatesByCategory, 
-  searchTemplates, 
-  getTemplateCategories,
-  getPopularTemplates,
-  getRecommendedTemplates,
-  type TableTemplate 
-} from '@/utils/tableTemplates';
+// Templates removed; provide minimal stubs to keep component compiling if used
+type TableTemplate = {
+  id: string;
+  icon: string;
+  displayName: string;
+  description: string;
+  difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
+  estimatedSetupTime: string;
+  columns: Array<{ display_name: string; name: string; type: string; nullable: boolean }>;
+  tags: string[];
+  useCases: string[];
+  category: string;
+};
+const tableTemplates: TableTemplate[] = [];
+const getTemplatesByCategory = (_c: string) => [] as TableTemplate[];
+const searchTemplates = (_q: string) => tableTemplates;
+const getTemplateCategories = () => [] as string[];
+const getPopularTemplates = (_n: number) => [] as TableTemplate[];
+const getRecommendedTemplates = (_n: number) => [] as TableTemplate[];
 
 interface TableTemplateSelectorProps {
   isOpen: boolean;
@@ -177,12 +187,7 @@ export default function TableTemplateSelector({
             Key Features
           </h4>
           <ul className="space-y-2">
-            {template.features.map((feature, index) => (
-              <li key={index} className="text-sm flex items-center gap-2">
-                <Check className="h-3 w-3 text-green-500" />
-                {feature}
-              </li>
-            ))}
+            {/* features removed in stub */}
           </ul>
         </div>
 

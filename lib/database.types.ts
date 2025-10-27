@@ -183,12 +183,65 @@ export type Database = {
         }
         Relationships: []
       }
+      user_profiles: {
+        Row: {
+          created_at: string
+          display_name: string | null
+          email: string
+          id: string
+          invitation_id: string | null
+          is_active: boolean
+          registered_via: string | null
+          role: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string | null
+          email: string
+          id?: string
+          invitation_id?: string | null
+          is_active?: boolean
+          registered_via?: string | null
+          role?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string | null
+          email?: string
+          id?: string
+          invitation_id?: string | null
+          is_active?: boolean
+          registered_via?: string | null
+          role?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      batch_upsert_agent_preferences: {
+        Args: { p_items: Json; p_user_id: string }
+        Returns: undefined
+      }
+      list_user_agents: { Args: { p_user_id: string }; Returns: Json }
+      upsert_agent_preference: {
+        Args: {
+          p_agent_builtin_id: string
+          p_agent_id: string
+          p_is_enabled: boolean
+          p_sort_order: number
+          p_user_id: string
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
@@ -321,7 +374,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-
-
-
-

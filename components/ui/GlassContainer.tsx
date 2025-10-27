@@ -1,5 +1,5 @@
 import React, { ElementType } from 'react';
-import { useGlassStyles } from '@/hooks/useGlass';
+import { useGlassStyles } from '@/app/hooks/useGlass';
 
 interface GlassContainerProps {
   children: React.ReactNode;

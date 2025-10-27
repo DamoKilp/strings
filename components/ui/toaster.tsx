@@ -9,14 +9,14 @@ import {
   ToastTitle,
   ToastViewport,
 } from "@/components/ui/toast"
-import { useToast } from "@/hooks/use-toast" // Or your custom path e.g. "@/hooks/use-toast"
+import { useToast } from "@/app/hooks/use-toast" // Or your custom path e.g. "@/hooks/use-toast"
 
 export function Toaster() {
   const { toasts } = useToast()
 
   return (
     <ToastProvider>
-      {toasts.map(function ({ id, title, description, action, variant, ...props }) {
+      {toasts.map(function ({ id, title, description, action, variant, ...props }: any) {
         return (
           <Toast
             key={id}

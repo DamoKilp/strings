@@ -37,19 +37,19 @@ import {
   Cog, // NEW: Settings cog for table search settings
   UserCog,
 } from 'lucide-react';
-import { useInputHeight } from '@/hooks/useInputHeight';
+import { useInputHeight } from '@/app/hooks/useInputHeight';
 import { DragHandle } from '@/components/chat/DragHandle';
 import { LLMModel } from '@/lib/models';
 import { SendIcon } from './IconComponents';
 import { ModelIcon } from '@/components/icons/ModelIcon';
-import useWindowHeight from '@/hooks/useWindowHeight';
+import useWindowHeight from '@/app/hooks/useWindowHeight';
 import { isFileInArray } from '@/lib/utils';
 import { ModelSettingsPopup } from './ModelSettingsPopup';
 import { AgentSelector } from './AgentSelector';
 import { PrePrompt } from '@/components/data/prePrompts';
 import { ImagePreview } from '@/components/chat/ImagePreview';
 import { useChatContext } from '@/components/contexts/ChatProvider';
-import { IngestionDialog } from '@/components/ingestion/IngestionDialog';
+// Ingestion removed
 import { BookOpen } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { TableSearchSettingsModal } from '@/components/ui/table-search-settings-modal';
@@ -104,10 +104,7 @@ export function ChatInput({
   const { toggleVectorSearch, toggleTableSearch, toggleWebSearch, setTableSearchSettings, setChatFontSize } = actions;
   // -----------------------------------------
 
-  // NEW: IngestionDialog modal state
-  const [isIngestionOpen, setIsIngestionOpen] = useState(false);
-  // NEW: track the "minimized" state of the dialog
-  const [isIngestionMinimized, setIsIngestionMinimized] = useState(false);
+  // Ingestion removed
   // Model Settings Dialog state
   const [isModelSettingsOpen, setIsModelSettingsOpen] = useState(false);
 
@@ -768,30 +765,7 @@ export function ChatInput({
                 </TooltipProvider>
               )}
               
-              {/* Knowledge Base */}
-              <TooltipProvider delayDuration={0}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className="toolbar-btn text-sky-400/80 dark:text-sky-400/80"
-                      onClick={() => {
-                        if (isIngestionOpen && isIngestionMinimized) {
-                          setIsIngestionMinimized(false);
-                        } else {
-                          setIsIngestionOpen(true);
-                        }
-                      }}
-                      aria-label="Knowledge Base"
-                    >
-                      <BookOpen className="toolbar-icon" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="right" sideOffset={4} className="toolbar-tooltip !bg-slate-900 !text-slate-200 border border-slate-700 pointer-events-none">
-                    <span>Knowledge Base</span>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+            {/* Knowledge Base removed */}
             </div>
           </div>
           
@@ -870,8 +844,6 @@ export function ChatInput({
       isMultiModal,
       filePreview,
       hasBlockedAttachments,
-      isIngestionOpen,
-      isIngestionMinimized,
       showDriveMode,
       driveModeActive,
       onDriveModeToggle,
@@ -896,17 +868,7 @@ export function ChatInput({
           onOpenChange={setIsModelSettingsOpen} 
         />
 
-        {/* Ingestion Modal */}
-        <IngestionDialog
-          open={isIngestionOpen && !isIngestionMinimized}
-          onOpenChange={open => {
-            setIsIngestionOpen(open);
-            // If closing, also clear minimization
-            if (!open) setIsIngestionMinimized(false);
-          }}
-          // @ts-expect-error - pass the setter if supported for minimize button
-          onMinimize={() => setIsIngestionMinimized(true)}
-        />
+        {/* Ingestion removed */}
 
         {/* Form Element */}
         <form

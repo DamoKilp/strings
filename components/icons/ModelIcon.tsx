@@ -1,42 +1,46 @@
-// /src/components/ai/ModelIcon.tsx
+// Lightweight provider icon without relying on SVGR/Turbopack SVG transformers
 import React from 'react';
 
-// Import your custom icons as React components using SVGR.
-// Adjust the paths according to your project folder structure.
-// The following syntax works when your project is configured with @svgr/webpack.
-import OpenAIIcon from '@/components/icons/openai.svg';
-import AnthropicIcon from '@/components/icons/anthropic.svg';
-import GoogleIcon from '@/components/icons/google.svg';
-
-// For providers that do not yet have a custom icon, import a default icon.
-import DefaultIcon from '@/components/icons/default.svg';
-
-// Define the props interface for ModelIcon.
 interface ModelIconProps {
-  providerId: string;
+  providerId: string | null | undefined;
   size?: number;
   className?: string;
 }
 
-// Map provider IDs to their corresponding custom icon components.
-const providerIconMap: Record<string, React.ElementType> = {
-  openai: OpenAIIcon,
-  anthropic: AnthropicIcon,
-  google: GoogleIcon,
-  gemini: GoogleIcon, 
-  // Map other providers to the default icon if custom icons aren't available.
-  mistral: DefaultIcon,
-  groq: DefaultIcon,
-  togetherai: DefaultIcon,
-  ollama: DefaultIcon,
-  fireworks: DefaultIcon,
-  vertex: DefaultIcon,
-  xai: DefaultIcon,
-  deepseek: DefaultIcon,
+const providerBgClass: Record<string, string> = {
+  openai: 'bg-emerald-600',
+  anthropic: 'bg-amber-600',
+  google: 'bg-blue-600',
+  gemini: 'bg-indigo-600',
+  mistral: 'bg-sky-600',
+  groq: 'bg-fuchsia-600',
+  togetherai: 'bg-purple-600',
+  ollama: 'bg-zinc-600',
+  fireworks: 'bg-rose-600',
+  vertex: 'bg-green-700',
+  xai: 'bg-neutral-700',
+  deepseek: 'bg-cyan-600',
+  default: 'bg-gray-500',
 };
 
 export function ModelIcon({ providerId, size = 20, className = '' }: ModelIconProps) {
-  // Use the custom icon for the provider if available; otherwise, fall back to DefaultIcon.
-  const IconComponent = providerIconMap[providerId] || DefaultIcon;
-  return <IconComponent width={size} height={size} className={className} />;
+  const key = (providerId || 'default').toString().toLowerCase();
+  const bg = providerBgClass[key] || providerBgClass.default;
+  const letter = (key[0] || 'A').toUpperCase();
+  const fontSizePx = Math.max(10, Math.floor(size * 0.55));
+
+  return (
+    <div
+      className={`inline-flex items-center justify-center rounded-full ${bg} ${className}`}
+      style={{ width: size, height: size }}
+      aria-label={`${providerId || 'model'} icon`}
+    >
+      <span
+        className="text-white leading-none font-bold select-none"
+        style={{ fontSize: fontSizePx }}
+      >
+        {letter}
+      </span>
+    </div>
+  );
 }

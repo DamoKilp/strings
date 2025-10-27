@@ -13,9 +13,11 @@
  */
 
 // CRITICAL: Import from existing type hierarchy (RULE 1 & 2 from AI_RULES.md)
-import type { CalculatedColumnDefinition, FormulaValidationResult } from '@/app/Projects/dataWorkbench/types/calculatedTypes';
-import type { GridColumnDefinition } from '@/app/Projects/dataWorkbench/types/gridTypes';
-import type { RelationshipDefinition } from '@/types/DynamicTable';
+// DataWorkbench removed; provide minimal local type stubs to satisfy build
+type GridColumnDefinition = { name: string; display_name?: string; type: string; nullable: boolean; defaultValue?: any; isPrimaryKey?: boolean; isUnique?: boolean };
+type RelationshipDefinition = { fromTable: string; toTable: string; fromColumn: string; toColumn: string };
+type CalculatedColumnDefinition = { name: string; display_name?: string; formula: string };
+type FormulaValidationResult = { isValid: boolean; errors?: string[] };
 
 // =============================================================================
 // DIALOG STEP MANAGEMENT

@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
     const { id, name, description, content, iconKey, colorHex } = await req.json()
     if (!name || !content) return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
 
-    const payload = {
+    const payload: any = {
       name,
       description: description || '',
       content,
@@ -22,13 +22,15 @@ export async function POST(req: NextRequest) {
     }
 
     if (id) {
-      const { error } = await supabase.from('custom_agents').update(payload).eq('id', id).eq('created_by', user.id)
+      const { error } = await (supabase as any).from('user_agents').update(payload).eq('id', id).eq('user_id', user.id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       return NextResponse.json({ id })
     } else {
-      const { data, error } = await supabase.from('custom_agents').insert(payload).select('id').limit(1)
+      const insertPayload = { ...payload, is_builtin: false, user_id: user.id }
+      const { data, error } = await (supabase as any).from('user_agents').insert(insertPayload).select('id').limit(1)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-      return NextResponse.json({ id: data?.[0]?.id })
+      const newId = Array.isArray(data) ? (data[0] as any)?.id : (data as any)?.id
+      return NextResponse.json({ id: newId })
     }
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Failed to save agent' }, { status: 500 })

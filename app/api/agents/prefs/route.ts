@@ -18,12 +18,12 @@ export async function POST(req: NextRequest) {
     // Prefer RPC if available to enforce constraints
     const hasRpc = true
     if (hasRpc) {
-      const { error } = await supabase.rpc('upsert_agent_preference', {
+      const { error } = await (supabase as any).rpc('upsert_agent_preference', {
         p_user_id: user.id,
         p_agent_id: agentId || null,
         p_agent_builtin_id: agentBuiltinId || null,
         p_is_enabled: !!isEnabled,
-        p_sort_order: typeof sortOrder === 'number' ? sortOrder : null,
+        p_sort_order: typeof sortOrder === 'number' ? sortOrder : (null as any),
       })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       return NextResponse.json({ ok: true })

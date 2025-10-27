@@ -12,7 +12,7 @@ type TabType = 'signin' | 'signup';
 
 export default function Login({ searchParams }: { searchParams: Promise<Message> }) {
   const [activeTab, setActiveTab] = useState<TabType>('signin');
-  const [params, setParams] = useState<Message>({});
+  const [params, setParams] = useState<Message>({ message: '' });
   
   useEffect(() => {
     searchParams.then(setParams);

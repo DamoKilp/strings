@@ -92,19 +92,7 @@ export async function clearUserDataOnSignOut(userId?: string) {
       });
     }
     
-    // 🎯 TARGETED FIX: Clear UserPreferencesService cache on sign-out
-    try {
-      // Use dynamic import to avoid circular dependencies
-      const { UserPreferencesService } = await import('@/app/Projects/dataWorkbench/services/UserPreferencesService');
-      const instance = UserPreferencesService.getInstance();
-      if (instance) {
-        instance.clearCacheOnUserSignOut();
-
-      }
-    } catch (error) {
-
-      // Non-critical error, continue with cleanup
-    }
+    // DataWorkbench removed: skip clearing UserPreferencesService cache
     
     // 🎯 ENHANCED: Clear additional service caches and states
     try {
@@ -126,14 +114,7 @@ export async function clearUserDataOnSignOut(userId?: string) {
     // 🎯 ENHANCED: Trigger global state reset for React components
     try {
       if (typeof window !== 'undefined') {
-        // Reset AI Insights Sidebar store
-        try {
-          const { useAIInsightsSidebarStore } = await import('@/app/Projects/dataWorkbench/stores/aiInsightsSidebarStore');
-          useAIInsightsSidebarStore.getState().reset();
-
-        } catch (error) {
-
-        }
+        // DataWorkbench store removed
         
         // Dispatch a custom event that components can listen to
         window.dispatchEvent(new CustomEvent('user-signed-out', { 

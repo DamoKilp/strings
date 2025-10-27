@@ -21,7 +21,7 @@ import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle } from "@/co
 import { useIsMobile } from "@/components/ui/use-mobile";
 import { SidebarNavItems } from "./SidebarNavItems";
 import { useChatContext } from "@/components/contexts/ChatProvider";
-import { useRBAC } from "@/hooks/useRBAC";
+import { useRBAC } from "@/app/hooks/useRBAC";
 import { UserRole } from "@/types/rbac";
 import { clearUserDataOnSignOut, forceRedirectToSignIn } from "@/utils/auth/authUtils";
 import { signOutAction } from "@/app/actions";

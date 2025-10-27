@@ -1,1 +1,1 @@
-export { useIsMobile } from "@/hooks/use-breakpoint"
+export { useIsMobile } from "@/app/hooks/use-breakpoint"

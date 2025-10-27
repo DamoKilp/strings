@@ -13,10 +13,10 @@ import { Switch } from '@/components/ui/switch';
 import { Settings, Database, Clock, Zap, Info, Save, RotateCcw, BookOpen, AlertCircle } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { TableSearchSettings } from '@/lib/types';
-import { useProjectStore } from '@/app/Projects/dataWorkbench/stores/projectStore';
-import { TableSearchLayout } from '@/components/ui/TableSearchLayout';
-import { listProjects } from '@/app/Projects/dataWorkbench/services/projectContextService';
+// DataWorkbench removed; project selection disabled
+// TableSearchLayout kept local
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import TableSearchLayout from '@/components/ui/TableSearchLayout';
 
 // Default presets - UPDATED to prevent context overflow
 // NOTE: maxResultsReturned is the critical limit to prevent exceeding model context windows
@@ -102,7 +102,7 @@ export function TableSearchSettingsModal({
   const [isOpen, setIsOpen] = useState(false);
   const [availableTables, setAvailableTables] = useState<Array<{name: string, display_name: string}>>([]);
   const [loadingTables, setLoadingTables] = useState(false);
-  const globalSelectedProjectId = useProjectStore(s => s.selectedProjectId);
+  const globalSelectedProjectId = null as unknown as string | null;
   
   // Local project selection state (separate from global context)
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(globalSelectedProjectId);
@@ -176,8 +176,7 @@ export function TableSearchSettingsModal({
   const fetchAvailableProjects = async () => {
     setLoadingProjects(true);
     try {
-      const projects = await listProjects();
-      setAvailableProjects(projects);
+      setAvailableProjects([]);
     } catch (error) {
       console.error('Failed to fetch projects:', error);
       setAvailableProjects([]);
@@ -195,20 +194,7 @@ export function TableSearchSettingsModal({
     
     setLoadingTables(true);
     try {
-      const qp = `?projectId=${encodeURIComponent(selectedProjectId)}`;
-      const response = await fetch(`/api/tables/available${qp}`);
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch tables: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.success && data.tables) {
-        setAvailableTables(data.tables);
-      } else {
-        throw new Error('Invalid response format');
-      }
+      setAvailableTables([]);
     } catch (error) {
       // Fallback to common table names if API fails
       setAvailableTables([

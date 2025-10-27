@@ -31,7 +31,7 @@
 **DATABASE OPERATIONS**
 - Available RPCs: `table_exists`, `get_public_table_columns`, `create_dynamic_table_safe`, `drop_table_cascade_safe`, `add_column_if_not_exists`, `list_public_triggers`, `list_public_tables`, `create_composite_fk_constraint`, `drop_constraint_if_exists`, `find_orphans_composite`, `delete_orphans_composite`, `delete_table_preferences`, `drop_table_and_prefs`
 - **Supabase MCP Server**: Direct database access via MCP tools - view schema, execute SQL, manage migrations, deploy Edge Functions, create branches, access logs and advisors
--- Run npx supabase gen types typescript --project-id avngnrpbcmqgnbmutoxb --schema public > lib/database.types.ts to update the app with the new changes
+-- Run npx supabase gen types typescript --project-id nktqfxfotmcbxufilcnh --schema public > lib/database.types.ts to update the app with the new changes
 
 **USER EXPERIENCE**
 - Accessible (ARIA, keyboard nav)
@@ -160,7 +160,6 @@ const { data, error } = await supabase
 
 **Validation Commands:**
 ```bash
-node scripts/checks/grep-for-exec-sql.js  # Security: exec_sql detector
 npx tsc --noEmit                           # Type safety check
 npm run lint                               # Code quality
 ```
@@ -192,7 +191,7 @@ npm run lint                               # Code quality
 
 ---
 
-**TASK**: Read the 4 mandatory files, confirm readiness, then build secure, exceptional code! 🚀
+**TASK**: Read the 3 mandatory files, confirm readiness, then build secure, exceptional code! 🚀
 - Performance (stable effects, efficient renders)
 - User experience (accessibility, responsiveness)
 - Code maintainability (clear, documented, testable)
@@ -216,5 +215,5 @@ Now let's craft production-grade code that's elegant, performant, type-safe, and
 
 ---
 
-**TASK**: Read the 4 mandatory files completely, confirm your readiness, then let's build with excellence! 🚀
+**TASK**: Read the 3 mandatory files completely, confirm your readiness, then let's build with excellence! 🚀
 ```

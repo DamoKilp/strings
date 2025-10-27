@@ -14,9 +14,20 @@
  */
 
 // ✅ Import from canonical sources - NO DUPLICATION
-import type { ColumnDefinition } from '../../../../types/DynamicTable';
-import type { GridColumnDefinition } from '../../../../app/Projects/dataWorkbench/types/gridTypes';
-import type { ValidationResult } from '../services/ColumnValidationService';
+// Local minimal stubs to decouple from removed DataWorkbench
+type ColumnDefinition = {
+  name: string;
+  display_name?: string;
+  type: 'text' | 'integer' | 'decimal' | 'boolean' | 'date' | 'timestamp' | 'uuid';
+  nullable: boolean;
+  defaultValue?: any;
+  isPrimaryKey?: boolean;
+  isUnique?: boolean;
+};
+type GridColumnDefinition = ColumnDefinition & {
+  maxLength?: number; minLength?: number; pattern?: string; min?: number; max?: number;
+};
+type ValidationResult = { isValid: boolean; error?: string; severity?: 'error' | 'warning' | 'info' };
 
 /**
  * Props for the main AddRegularColumnDialog component
@@ -346,9 +357,9 @@ export const ValidationStateFactory = {
     return {
       ...base,
       ...otherResults,
-      typeSpecificFields: (typeSpecificFields && typeof typeSpecificFields === 'object' && 'isValid' in typeSpecificFields) 
-        ? {} // If typeSpecificFields is a ValidationResult, default to empty
-        : typeSpecificFields || {},
+      typeSpecificFields: (typeSpecificFields && !('isValid' in (typeSpecificFields as any)))
+        ? (typeSpecificFields as unknown as Record<string, ValidationResult>)
+        : {},
       overall: {
         isValid: Object.values(results).every(result => result?.isValid !== false),
         severity: Object.values(results).some(result => result?.severity === 'error') ? 'error' :

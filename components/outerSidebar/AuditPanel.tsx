@@ -1,7 +1,8 @@
 "use client"
 
 import React, { useEffect, useMemo, useState } from 'react'
-import { fetchAuditEntries } from '@/app/actions/auditActions'
+// Audit removed
+const fetchAuditEntries = async (_args: any) => ({ success: true, data: [], total: 0 })
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'

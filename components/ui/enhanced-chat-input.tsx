@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { TableSearchSettingsModal } from '@/components/ui/table-search-settings-modal';
-import { useTableSearchSettings } from '@/hooks/useTableSearchSettings';
+import { useTableSearchSettings } from '@/app/hooks/useTableSearchSettings';
 
 interface EnhancedChatInputProps {
   onSendMessage: (message: string, tableSearchSettings?: any) => void;

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React from "react";
-import { useRBAC } from '@/hooks/useRBAC';
+import { useRBAC } from '@/app/hooks/useRBAC';
 import { Permission } from '@/types/rbac';
 
 // Modern, full-color icons from react-icons for Zen browser-like appearance
