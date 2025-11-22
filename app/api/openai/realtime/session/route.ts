@@ -9,11 +9,11 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { model, voice, language } = await req.json().catch(() => ({ })) as { model?: string; voice?: string; language?: string }
+    const { model, voice } = await req.json().catch(() => ({ })) as { model?: string; voice?: string }
 
     // Minimal validation and safe defaults
     const effectiveModel = (model || '').trim() || 'gpt-realtime'
-    const effectiveVoice = (voice || '').trim() || 'verse'
+    const effectiveVoice = (voice || '').trim() || 'coral'
 
     const body = {
       model: effectiveModel,
@@ -41,8 +41,9 @@ export async function POST(req: NextRequest) {
     const json = await r.json()
     // Return ephemeral session JSON (contains client_secret.value)
     return NextResponse.json(json, { status: 200, headers: { 'Cache-Control': 'no-store' } })
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Failed to create session' }, { status: 500 })
+  } catch (e: unknown) {
+    const err = e as Error
+    return NextResponse.json({ error: err?.message || 'Failed to create session' }, { status: 500 })
   }
 }
 

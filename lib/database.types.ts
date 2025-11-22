@@ -14,6 +14,116 @@ export type Database = {
   }
   public: {
     Tables: {
+      activities: {
+        Row: {
+          activity_date: string
+          avg_hr: number | null
+          avg_pace_min_per_km: number | null
+          calories: number | null
+          created_at: string
+          distance_meters: number | null
+          duration_seconds: number
+          elevation_gain_m: number | null
+          fit_file_path: string | null
+          id: string
+          max_hr: number | null
+          notes: string | null
+          perceived_exertion: number | null
+          sport_type: string
+          start_time: string
+          training_effect_aerobic: number | null
+          training_effect_anaerobic: number | null
+          training_load: number | null
+          user_id: string
+        }
+        Insert: {
+          activity_date: string
+          avg_hr?: number | null
+          avg_pace_min_per_km?: number | null
+          calories?: number | null
+          created_at?: string
+          distance_meters?: number | null
+          duration_seconds: number
+          elevation_gain_m?: number | null
+          fit_file_path?: string | null
+          id?: string
+          max_hr?: number | null
+          notes?: string | null
+          perceived_exertion?: number | null
+          sport_type: string
+          start_time: string
+          training_effect_aerobic?: number | null
+          training_effect_anaerobic?: number | null
+          training_load?: number | null
+          user_id: string
+        }
+        Update: {
+          activity_date?: string
+          avg_hr?: number | null
+          avg_pace_min_per_km?: number | null
+          calories?: number | null
+          created_at?: string
+          distance_meters?: number | null
+          duration_seconds?: number
+          elevation_gain_m?: number | null
+          fit_file_path?: string | null
+          id?: string
+          max_hr?: number | null
+          notes?: string | null
+          perceived_exertion?: number | null
+          sport_type?: string
+          start_time?: string
+          training_effect_aerobic?: number | null
+          training_effect_anaerobic?: number | null
+          training_load?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      activity_laps: {
+        Row: {
+          activity_id: string
+          avg_hr: number | null
+          avg_pace_min_per_km: number | null
+          distance_meters: number | null
+          duration_seconds: number | null
+          elevation_gain_m: number | null
+          id: string
+          lap_number: number
+          max_hr: number | null
+        }
+        Insert: {
+          activity_id: string
+          avg_hr?: number | null
+          avg_pace_min_per_km?: number | null
+          distance_meters?: number | null
+          duration_seconds?: number | null
+          elevation_gain_m?: number | null
+          id?: string
+          lap_number: number
+          max_hr?: number | null
+        }
+        Update: {
+          activity_id?: string
+          avg_hr?: number | null
+          avg_pace_min_per_km?: number | null
+          distance_meters?: number | null
+          duration_seconds?: number | null
+          elevation_gain_m?: number | null
+          id?: string
+          lap_number?: number
+          max_hr?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_laps_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agent_preferences: {
         Row: {
           agent_builtin_id: string | null
@@ -49,6 +159,48 @@ export type Database = {
           },
         ]
       }
+      ai_nudges: {
+        Row: {
+          action_taken: string | null
+          created_at: string
+          domain: string
+          id: string
+          is_read: boolean
+          message: string | null
+          nudge_time: string
+          nudge_type: string | null
+          priority: number | null
+          title: string | null
+          user_id: string
+        }
+        Insert: {
+          action_taken?: string | null
+          created_at?: string
+          domain?: string
+          id?: string
+          is_read?: boolean
+          message?: string | null
+          nudge_time?: string
+          nudge_type?: string | null
+          priority?: number | null
+          title?: string | null
+          user_id: string
+        }
+        Update: {
+          action_taken?: string | null
+          created_at?: string
+          domain?: string
+          id?: string
+          is_read?: boolean
+          message?: string | null
+          nudge_time?: string
+          nudge_type?: string | null
+          priority?: number | null
+          title?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       conversations: {
         Row: {
           created_at: string
@@ -76,6 +228,84 @@ export type Database = {
         }
         Relationships: []
       }
+      daily_metrics: {
+        Row: {
+          body_battery_charged: number | null
+          body_battery_drained: number | null
+          body_battery_end: number | null
+          body_battery_start: number | null
+          calories_active: number | null
+          calories_total: number | null
+          created_at: string
+          date: string
+          floors_climbed: number | null
+          hrv_sdnn_ms: number | null
+          id: string
+          intensity_minutes_moderate: number | null
+          intensity_minutes_vigorous: number | null
+          resting_hr: number | null
+          steps: number | null
+          stress_avg: number | null
+          stress_max: number | null
+          training_load_acute: number | null
+          training_load_chronic: number | null
+          training_status: string | null
+          updated_at: string
+          user_id: string
+          vo2max: number | null
+        }
+        Insert: {
+          body_battery_charged?: number | null
+          body_battery_drained?: number | null
+          body_battery_end?: number | null
+          body_battery_start?: number | null
+          calories_active?: number | null
+          calories_total?: number | null
+          created_at?: string
+          date: string
+          floors_climbed?: number | null
+          hrv_sdnn_ms?: number | null
+          id?: string
+          intensity_minutes_moderate?: number | null
+          intensity_minutes_vigorous?: number | null
+          resting_hr?: number | null
+          steps?: number | null
+          stress_avg?: number | null
+          stress_max?: number | null
+          training_load_acute?: number | null
+          training_load_chronic?: number | null
+          training_status?: string | null
+          updated_at?: string
+          user_id: string
+          vo2max?: number | null
+        }
+        Update: {
+          body_battery_charged?: number | null
+          body_battery_drained?: number | null
+          body_battery_end?: number | null
+          body_battery_start?: number | null
+          calories_active?: number | null
+          calories_total?: number | null
+          created_at?: string
+          date?: string
+          floors_climbed?: number | null
+          hrv_sdnn_ms?: number | null
+          id?: string
+          intensity_minutes_moderate?: number | null
+          intensity_minutes_vigorous?: number | null
+          resting_hr?: number | null
+          steps?: number | null
+          stress_avg?: number | null
+          stress_max?: number | null
+          training_load_acute?: number | null
+          training_load_chronic?: number | null
+          training_status?: string | null
+          updated_at?: string
+          user_id?: string
+          vo2max?: number | null
+        }
+        Relationships: []
+      }
       documents: {
         Row: {
           content: string
@@ -97,6 +327,180 @@ export type Database = {
           id?: number
           metadata?: Json | null
           project_name?: string | null
+        }
+        Relationships: []
+      }
+      health_profiles: {
+        Row: {
+          birth_date: string | null
+          created_at: string
+          dietary_preferences: Json | null
+          height_cm: number | null
+          medical_conditions: Json | null
+          sex: string | null
+          timezone: string | null
+          training_modality: string[] | null
+          updated_at: string
+          user_id: string
+          weekly_availability_hours: number | null
+          weight_goal_kg: number | null
+        }
+        Insert: {
+          birth_date?: string | null
+          created_at?: string
+          dietary_preferences?: Json | null
+          height_cm?: number | null
+          medical_conditions?: Json | null
+          sex?: string | null
+          timezone?: string | null
+          training_modality?: string[] | null
+          updated_at?: string
+          user_id: string
+          weekly_availability_hours?: number | null
+          weight_goal_kg?: number | null
+        }
+        Update: {
+          birth_date?: string | null
+          created_at?: string
+          dietary_preferences?: Json | null
+          height_cm?: number | null
+          medical_conditions?: Json | null
+          sex?: string | null
+          timezone?: string | null
+          training_modality?: string[] | null
+          updated_at?: string
+          user_id?: string
+          weekly_availability_hours?: number | null
+          weight_goal_kg?: number | null
+        }
+        Relationships: []
+      }
+      hydration_logs: {
+        Row: {
+          amount_ml: number
+          created_at: string
+          drink_type: string | null
+          id: string
+          log_date: string
+          log_time: string | null
+          user_id: string
+        }
+        Insert: {
+          amount_ml: number
+          created_at?: string
+          drink_type?: string | null
+          id?: string
+          log_date: string
+          log_time?: string | null
+          user_id: string
+        }
+        Update: {
+          amount_ml?: number
+          created_at?: string
+          drink_type?: string | null
+          id?: string
+          log_date?: string
+          log_time?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      import_jobs: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          error_message: string | null
+          id: string
+          inserted_rows: number | null
+          object_key: string
+          processed_files: number | null
+          source: string
+          started_at: string | null
+          status: string
+          total_files: number | null
+          updated_rows: number | null
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          inserted_rows?: number | null
+          object_key: string
+          processed_files?: number | null
+          source: string
+          started_at?: string | null
+          status?: string
+          total_files?: number | null
+          updated_rows?: number | null
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          inserted_rows?: number | null
+          object_key?: string
+          processed_files?: number | null
+          source?: string
+          started_at?: string | null
+          status?: string
+          total_files?: number | null
+          updated_rows?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      memories_daily: {
+        Row: {
+          created_at: string
+          flagged_concerns: string[] | null
+          goals_progress: Json | null
+          id: string
+          key_insights: Json | null
+          memory_date: string
+          nutrition_summary: Json | null
+          readiness_score: number | null
+          sleep_quality: string | null
+          stress_level: string | null
+          summary_long: string | null
+          summary_short: string | null
+          training_recommendation: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          flagged_concerns?: string[] | null
+          goals_progress?: Json | null
+          id?: string
+          key_insights?: Json | null
+          memory_date: string
+          nutrition_summary?: Json | null
+          readiness_score?: number | null
+          sleep_quality?: string | null
+          stress_level?: string | null
+          summary_long?: string | null
+          summary_short?: string | null
+          training_recommendation?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          flagged_concerns?: string[] | null
+          goals_progress?: Json | null
+          id?: string
+          key_insights?: Json | null
+          memory_date?: string
+          nutrition_summary?: Json | null
+          readiness_score?: number | null
+          sleep_quality?: string | null
+          stress_level?: string | null
+          summary_long?: string | null
+          summary_short?: string | null
+          training_recommendation?: string | null
+          user_id?: string
         }
         Relationships: []
       }
@@ -147,6 +551,108 @@ export type Database = {
           },
         ]
       }
+      nutrition_entries: {
+        Row: {
+          calories: number | null
+          carbs_g: number | null
+          created_at: string
+          entry_date: string
+          fat_g: number | null
+          food_description: string | null
+          id: string
+          meal_time: string | null
+          meal_type: string | null
+          photo_url: string | null
+          protein_g: number | null
+          source: string | null
+          user_id: string
+        }
+        Insert: {
+          calories?: number | null
+          carbs_g?: number | null
+          created_at?: string
+          entry_date: string
+          fat_g?: number | null
+          food_description?: string | null
+          id?: string
+          meal_time?: string | null
+          meal_type?: string | null
+          photo_url?: string | null
+          protein_g?: number | null
+          source?: string | null
+          user_id: string
+        }
+        Update: {
+          calories?: number | null
+          carbs_g?: number | null
+          created_at?: string
+          entry_date?: string
+          fat_g?: number | null
+          food_description?: string | null
+          id?: string
+          meal_time?: string | null
+          meal_type?: string | null
+          photo_url?: string | null
+          protein_g?: number | null
+          source?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      sleep_sessions: {
+        Row: {
+          avg_hr: number | null
+          avg_hrv: number | null
+          avg_respiration_rate: number | null
+          awake_time_hrs: number | null
+          created_at: string
+          deep_sleep_hrs: number | null
+          duration_hrs: number | null
+          end_time: string
+          id: string
+          light_sleep_hrs: number | null
+          rem_sleep_hrs: number | null
+          sleep_date: string
+          sleep_score: number | null
+          start_time: string
+          user_id: string
+        }
+        Insert: {
+          avg_hr?: number | null
+          avg_hrv?: number | null
+          avg_respiration_rate?: number | null
+          awake_time_hrs?: number | null
+          created_at?: string
+          deep_sleep_hrs?: number | null
+          duration_hrs?: number | null
+          end_time: string
+          id?: string
+          light_sleep_hrs?: number | null
+          rem_sleep_hrs?: number | null
+          sleep_date: string
+          sleep_score?: number | null
+          start_time: string
+          user_id: string
+        }
+        Update: {
+          avg_hr?: number | null
+          avg_hrv?: number | null
+          avg_respiration_rate?: number | null
+          awake_time_hrs?: number | null
+          created_at?: string
+          deep_sleep_hrs?: number | null
+          duration_hrs?: number | null
+          end_time?: string
+          id?: string
+          light_sleep_hrs?: number | null
+          rem_sleep_hrs?: number | null
+          sleep_date?: string
+          sleep_score?: number | null
+          start_time?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_agents: {
         Row: {
           color_hex: string | null
@@ -179,6 +685,39 @@ export type Database = {
           id?: string
           is_builtin?: boolean
           name?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_preferences: {
+        Row: {
+          ai_personality: Json | null
+          coaching_goals: Json | null
+          created_at: string
+          data_sharing_preferences: Json | null
+          enabled_domains: string[] | null
+          nudge_settings: Json | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ai_personality?: Json | null
+          coaching_goals?: Json | null
+          created_at?: string
+          data_sharing_preferences?: Json | null
+          enabled_domains?: string[] | null
+          nudge_settings?: Json | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ai_personality?: Json | null
+          coaching_goals?: Json | null
+          created_at?: string
+          data_sharing_preferences?: Json | null
+          enabled_domains?: string[] | null
+          nudge_settings?: Json | null
+          updated_at?: string
           user_id?: string
         }
         Relationships: []
@@ -222,16 +761,80 @@ export type Database = {
         }
         Relationships: []
       }
+      weight_logs: {
+        Row: {
+          body_fat_pct: number | null
+          created_at: string
+          id: string
+          log_date: string
+          muscle_mass_kg: number | null
+          user_id: string
+          weight_kg: number
+        }
+        Insert: {
+          body_fat_pct?: number | null
+          created_at?: string
+          id?: string
+          log_date: string
+          muscle_mass_kg?: number | null
+          user_id: string
+          weight_kg: number
+        }
+        Update: {
+          body_fat_pct?: number | null
+          created_at?: string
+          id?: string
+          log_date?: string
+          muscle_mass_kg?: number | null
+          user_id?: string
+          weight_kg?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
-      [_ in never]: never
+      v_daily_readiness: {
+        Row: {
+          body_battery_start: number | null
+          date: string | null
+          hrv_sdnn_ms: number | null
+          injury_risk: string | null
+          readiness_score: number | null
+          sleep_score: number | null
+          stress_avg: number | null
+          training_status: string | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
+      assert_caller: { Args: { p_user_id: string }; Returns: undefined }
       batch_upsert_agent_preferences: {
         Args: { p_items: Json; p_user_id: string }
         Returns: undefined
       }
+      get_readiness_score: {
+        Args: { p_date: string; p_user_id: string }
+        Returns: Json
+      }
+      insert_activity_with_laps: {
+        Args: { p_activity: Json; p_laps: Json; p_user_id: string }
+        Returns: string
+      }
+      insert_daily_metrics_batch: {
+        Args: { p_metrics: Json; p_user_id: string }
+        Returns: Json
+      }
+      insert_nutrition_entry: {
+        Args: { p_entry: Json; p_user_id: string }
+        Returns: string
+      }
       list_user_agents: { Args: { p_user_id: string }; Returns: Json }
+      register_import_job: {
+        Args: { p_object_key: string; p_source: string; p_user_id: string }
+        Returns: string
+      }
       upsert_agent_preference: {
         Args: {
           p_agent_builtin_id: string
@@ -241,6 +844,14 @@ export type Database = {
           p_user_id: string
         }
         Returns: undefined
+      }
+      upsert_daily_memory: {
+        Args: { p_memory: Json; p_user_id: string }
+        Returns: string
+      }
+      upsert_sleep_session: {
+        Args: { p_sleep: Json; p_user_id: string }
+        Returns: string
       }
     }
     Enums: {
@@ -374,3 +985,4 @@ export const Constants = {
     Enums: {},
   },
 } as const
+

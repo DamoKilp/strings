@@ -19,7 +19,7 @@ const nextConfig: NextConfig = {
     });
     return config;
   },
-  // Remove invalid experimental key; Turbopack configured via top-level `turbopack` above
+  // Turbopack configured via top-level `turbopack` above
 };
 
 export default nextConfig;

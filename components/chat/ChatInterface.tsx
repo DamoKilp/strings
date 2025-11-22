@@ -965,3 +965,4 @@ export function ChatInterface() {
     </div>
   );
 }
+

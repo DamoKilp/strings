@@ -10,7 +10,8 @@ import {
   MdDashboard,
   MdShield,
   MdNavigation,
-  MdGames
+  MdGames,
+  MdCloudUpload,
 } from 'react-icons/md';
 import {
   BsGraphUpArrow,
@@ -33,6 +34,14 @@ const NAV_ITEMS = [
     color: "#4f46e5", // indigo
     visible: true,
     gradient: "from-indigo-500 to-purple-600"
+  },
+  {
+    href: "/health/import",
+    icon: MdCloudUpload,
+    label: "Health Import",
+    color: "#10b981", // emerald
+    visible: true,
+    gradient: "from-emerald-500 to-teal-600"
   },
   {
     href: "/Projects/projectManagement",

@@ -948,3 +948,4 @@ export function ChatInput({
     </div>
   );
 }
+

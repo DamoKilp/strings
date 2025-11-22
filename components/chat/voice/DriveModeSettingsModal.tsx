@@ -159,7 +159,7 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
               </button>
             </DialogTrigger>
           </TooltipTrigger>
-          <TooltipContent side="right" sideOffset={4} className="toolbar-tooltip !bg-slate-900 !text-slate-200 border border-slate-700 pointer-events-none">
+          <TooltipContent side="right" sideOffset={4} className="toolbar-tooltip bg-slate-900! text-slate-200! border border-slate-700 pointer-events-none">
             <div className="flex flex-col">
               <span className="font-semibold">Drive Mode Settings</span>
               <span className="text-xs opacity-80">Configure voice, language, audio output, and safety options</span>
@@ -334,7 +334,7 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
                   <div className="flex items-center justify-between p-4 rounded-lg border bg-background/50">
                     <div className="space-y-0.5">
                       <Label className="text-sm font-medium">Voice Stop intent</Label>
-                      <p className="text-xs text-muted-foreground">Say "Stop" to end Drive Mode</p>
+                      <p className="text-xs text-muted-foreground">Say &ldquo;Stop&rdquo; to end Drive Mode</p>
                     </div>
                     <Switch checked={settings.stopIntentEnabled} onCheckedChange={(v) => update({ stopIntentEnabled: !!v })} />
                   </div>

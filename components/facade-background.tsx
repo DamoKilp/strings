@@ -9,7 +9,7 @@ interface FacadeBackgroundProps {
   className?: string;
 }
 
-export function FacadeBackground({ className: _className = '' }: FacadeBackgroundProps) {
+export function FacadeBackground({ className = '' }: FacadeBackgroundProps) {
   const { theme, resolvedTheme } = useTheme();
   const { facadePreset } = useBackgroundMode();
   // Hydration-safe theme resolution: avoid setState in effects
@@ -315,6 +315,7 @@ export function FacadeBackground({ className: _className = '' }: FacadeBackgroun
     <>
       {/* Primary Facade Layer */}
       <div
+        className={className}
         style={{
           position: 'fixed',
           top: 0,

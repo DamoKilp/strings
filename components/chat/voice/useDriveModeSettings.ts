@@ -23,7 +23,7 @@ const STORAGE_KEY = 'ventiaam_drive_mode_settings_v1';
 export function getDefaultDriveModeSettings(): DriveModeSettings {
   return {
     language: 'en-US',
-    voice: 'verse',
+    voice: 'coral',
     // Default to latest GA realtime model; server will fallback if unavailable
     model: 'gpt-realtime',
     bargeInEnabled: true,

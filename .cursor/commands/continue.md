@@ -119,8 +119,7 @@ Generate this prompt for the user to copy:
 
 1. ✅ `docs/__Plans_New/architecture-spec-v4.md` - Architecture guide (COMPLETE FILE)
 2. ✅ `docs/__Plans_New/AI_RULES.md` - Development rules (COMPLETE FILE)
-3. ✅ `docs/__Specifications/System_Tables/06_SystemTablesSetup_specification.md` - System tables (COMPLETE FILE)
-4. ✅ `docs/__Specifications/09_SupabaseDataRetrieval_specification.md` - Database patterns (COMPLETE FILE)
+3. ✅ `docs/__Specifications/09_SupabaseDataRetrieval_specification.md` - Database patterns (COMPLETE FILE)
 
 **After reading, confirm concisely:**
 ```
@@ -201,5 +200,6 @@ When user types `/continue`:
    - Spend tokens unnecessarily
 
 **Tone**: Energizing, professional, technically precise, enthusiastic about code quality
+
 
 
