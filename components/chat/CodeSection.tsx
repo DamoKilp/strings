@@ -27,13 +27,14 @@ const FALLBACK_CODE_BLOCK: CodeBlock = {
 const CodeSection: React.FC<CodeSectionProps> = ({ codeBlocks, onClose }) => {
   const [activeTab, setActiveTab] = useState<number>(0);
 
+  // Validate and correct activeTab index when codeBlocks change
+  // This ensures UI consistency when code blocks are added/removed
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
-
     if (codeBlocks.length > 0) {
       const isValidIndex = activeTab >= 0 && activeTab < codeBlocks.length;
       if (!isValidIndex) {
-
-         setActiveTab(0);
+        setActiveTab(0);
       }
     }
   }, [codeBlocks, activeTab]);

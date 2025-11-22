@@ -106,7 +106,6 @@ export function useAgentManagerState(params: ManagerStateParams) {
   }, [builtins, customAgents, preferences]);
 
   const allUnifiedList: UnifiedAgent[] = useMemo(() => {
-    const enabledKeys = new Set(unifiedEnabledList.map((x) => x.key));
     // include disabled items as separate section; maintain stable order by name for browsing
     const disabledBuiltins: UnifiedAgent[] = builtins
       .map((b) => {
@@ -198,8 +197,9 @@ export function useAgentManagerState(params: ManagerStateParams) {
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error || 'Failed to save preference');
       dispatchAgentsUpdated();
-    } catch (e: any) {
-      toast('Failed to update preference', { description: e?.message || 'Unknown error' });
+    } catch (e: unknown) {
+      const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+      toast('Failed to update preference', { description: errorMessage });
       // rollback
       setPreferences((prev) => {
         const existing = getPrefForKey(key);
@@ -241,8 +241,9 @@ export function useAgentManagerState(params: ManagerStateParams) {
       await batchUpsertPreferences(items);
       toast('Order updated', { description: 'Your agent order has been saved.' });
       dispatchAgentsUpdated();
-    } catch (e: any) {
-      toast('Reorder failed', { description: e?.message || 'Unknown error' });
+    } catch (e: unknown) {
+      const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+      toast('Reorder failed', { description: errorMessage });
       // rollback
       if (lastStablePrefsRef.current) setPreferences(lastStablePrefsRef.current);
     } finally {
@@ -335,8 +336,9 @@ export function useAgentManagerState(params: ManagerStateParams) {
       toast('Agent saved', { description: input.id ? 'Updated successfully.' : 'Created successfully.' });
       dispatchAgentsUpdated();
       return saved;
-    } catch (e: any) {
-      toast('Save failed', { description: e?.message || 'Unknown error' });
+    } catch (e: unknown) {
+      const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+      toast('Save failed', { description: errorMessage });
       return null;
     } finally {
       setIsBusy(false);
@@ -355,8 +357,9 @@ export function useAgentManagerState(params: ManagerStateParams) {
       if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error || 'Failed to delete agent');
       toast('Deleted', { description: 'Agent removed.' });
       dispatchAgentsUpdated();
-    } catch (e: any) {
-      toast('Delete failed', { description: e?.message || 'Unknown error' });
+    } catch (e: unknown) {
+      const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+      toast('Delete failed', { description: errorMessage });
       // rollback
       setCustomAgents(prevAgents);
       setPreferences(prevPrefs);

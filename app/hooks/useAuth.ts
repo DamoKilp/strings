@@ -184,6 +184,25 @@ const loadGlobalAuth = async (): Promise<AuthState> => {
         if (AUTH_TIMING_DEBUG) console.log(`🔐 [${loadingId}] Step 1 completed in ${getUserDuration}ms. User:`, user ? `${user.email} (${user.id})` : 'null');
       
         if (userError) {
+          // Handle missing session errors gracefully (expected after sign-out)
+          const isMissingSession = userError.message?.includes('session') || 
+                                  userError.message?.includes('Session') ||
+                                  userError.name === 'AuthSessionMissingError';
+          
+          if (isMissingSession) {
+            if (AUTH_DEBUG || AUTH_TIMING_DEBUG) console.log(`🔐 [${loadingId}] Session missing (expected after sign-out), treating as no user`);
+            const newState: AuthState = {
+              user: null,
+              profile: null,
+              session: null,
+              isLoading: false,
+              error: null, // No error - missing session is expected after sign-out
+            };
+            globalAuthState = newState;
+            notifyListeners();
+            return newState;
+          }
+          
           console.error(`🚨 [${loadingId}] Failed to get current user:`, userError);
           const newState: AuthState = {
             user: null,

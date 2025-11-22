@@ -12,7 +12,18 @@ export async function POST(req: NextRequest) {
     const { id, name, description, content, iconKey, colorHex } = await req.json()
     if (!name || !content) return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
 
-    const payload: any = {
+    interface UserAgentPayload {
+      name: string;
+      description: string;
+      content: string;
+      icon_key: string;
+      color_hex: string;
+      created_by: string;
+      is_builtin?: boolean;
+      user_id?: string;
+    }
+
+    const payload: UserAgentPayload = {
       name,
       description: description || '',
       content,
@@ -21,19 +32,26 @@ export async function POST(req: NextRequest) {
       created_by: user.id,
     }
 
+    // Note: Type assertions needed due to Supabase type system limitations
+    // The database types need to be properly generated for full type safety
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (id) {
-      const { error } = await (supabase as any).from('user_agents').update(payload).eq('id', id).eq('user_id', user.id)
+      // @ts-expect-error - Supabase table types require generated database schema
+      const { error } = await supabase.from('user_agents').update(payload as any).eq('id', id).eq('user_id', user.id)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       return NextResponse.json({ id })
     } else {
-      const insertPayload = { ...payload, is_builtin: false, user_id: user.id }
-      const { data, error } = await (supabase as any).from('user_agents').insert(insertPayload).select('id').limit(1)
+      const insertPayload: UserAgentPayload = { ...payload, is_builtin: false, user_id: user.id }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await supabase.from('user_agents').insert(insertPayload as any).select('id').limit(1)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-      const newId = Array.isArray(data) ? (data[0] as any)?.id : (data as any)?.id
+      interface InsertResult { id: string }
+      const newId = Array.isArray(data) ? (data[0] as InsertResult)?.id : (data as InsertResult)?.id
       return NextResponse.json({ id: newId })
     }
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Failed to save agent' }, { status: 500 })
+  } catch (e: unknown) {
+    const errorMessage = e instanceof Error ? e.message : 'Failed to save agent'
+    return NextResponse.json({ error: errorMessage }, { status: 500 })
   }
 }
 

@@ -27,10 +27,16 @@ export const useGlassStyles = ({
   adaptToBackground = true,
   className = ''
 }: GlassStyleOptions = {}) => {
+  // Destructure to subscribe to context changes (needed for reactivity)
+  // Values are intentionally unused - we only need the subscription
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { backgroundMode: _backgroundMode, facadePreset: _facadePreset } = useBackgroundMode();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { resolvedTheme: _resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
+  // Hydration safety pattern: set mounted state after initial render
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setMounted(true), []);
 
   return useMemo(() => {
@@ -73,6 +79,8 @@ export function usePerformanceOptimizedGlass() {
 
   useEffect(() => {
     // Check backdrop-filter support
+    // Initialization effect: detect browser capabilities on mount
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     const testElement = document.createElement('div');
     testElement.style.backdropFilter = 'blur(1px)';
     setSupportsBackdropFilter(testElement.style.backdropFilter !== '');

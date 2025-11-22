@@ -48,8 +48,9 @@ export async function POST(req: NextRequest) {
   try {
     const config: LLMModelConfig = apiKey ? { apiKey } : {}
     languageModel = getModelClient(model, config)
-  } catch (e: any) {
-    return new Response(JSON.stringify({ error: `Model init failed: ${e?.message || 'unknown'}` }), { status: 500 })
+  } catch (e: unknown) {
+    const errorMessage = e instanceof Error ? e.message : 'unknown'
+    return new Response(JSON.stringify({ error: `Model init failed: ${errorMessage}` }), { status: 500 })
   }
 
   const encoder = new TextEncoder()
@@ -64,7 +65,11 @@ export async function POST(req: NextRequest) {
 
   ;(async () => {
     try {
-      const r: any = result
+      interface StreamResult {
+        textStream?: AsyncIterable<string>;
+        text?: string;
+      }
+      const r = result as unknown as StreamResult
       const textStream: AsyncIterable<string> | undefined = r.textStream
       if (textStream && Symbol.asyncIterator in Object(textStream)) {
         for await (const delta of textStream) {
@@ -76,8 +81,9 @@ export async function POST(req: NextRequest) {
           await writer.write(encoder.encode(`0:${JSON.stringify(fullText)}\n`))
         }
       }
-    } catch (err: any) {
-      try { await writer.write(encoder.encode(`3:${JSON.stringify({ error: err?.message || 'stream error' })}\n`)) } catch {}
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'stream error'
+      try { await writer.write(encoder.encode(`3:${JSON.stringify({ error: errorMessage })}\n`)) } catch {}
     } finally {
       try { await writer.close() } catch {}
     }

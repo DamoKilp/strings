@@ -60,7 +60,7 @@ export const MessageItem = React.memo(({
   onDelete,
 }: MessageItemProps) => {
   const { id, role, content, createdAt } = message;
-  const { chatFontSize } = useChatContext();
+  const { chatFontSize, user } = useChatContext();
 
   // Local state for message action copying
   const [messageActionsCopied, setMessageActionsCopied] = useState(false);
@@ -437,13 +437,9 @@ export const MessageItem = React.memo(({
               />
             </div>
           ) : (
-            <Image
-              src="/user-avatar.png"
-              alt="User"
-              width={32}
-              height={32}
-              className="w-6 h-6 md:w-8 md:h-8 rounded-full border border-white/30 dark:border-white/20 shadow-md hover:shadow-lg transition-shadow duration-200"
-            />
+            <div className="w-6 h-6 md:w-8 md:h-8 rounded-full border border-white/30 dark:border-white/20 shadow-md hover:shadow-lg transition-shadow duration-200 flex items-center justify-center bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-semibold text-xs md:text-sm">
+              {user?.email?.charAt(0).toUpperCase() || 'U'}
+            </div>
           )}
         </div>
       )}

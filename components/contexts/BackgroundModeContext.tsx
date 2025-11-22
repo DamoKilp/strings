@@ -48,6 +48,8 @@ export function BackgroundModeProvider({ children }: BackgroundModeProviderProps
   const { resolvedTheme, theme } = useTheme();
 
   // Load saved preferences from localStorage and migrate invalid presets
+  // Initialization effect: restore user preferences on mount
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     const savedMode = localStorage.getItem('background-mode') as BackgroundMode;
     const savedPresetRaw = localStorage.getItem('facade-preset');

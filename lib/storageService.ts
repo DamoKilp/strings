@@ -107,6 +107,24 @@ export class StorageService implements IStorageService {
           msg.userId = (msg.userId as string | undefined) || userId;
         });
 
+        // Sort messages by createdAt to ensure correct order
+        const sortedMessages = (item.messages as ChatMessage[]).sort((a, b) => {
+          const aTime = a.createdAt instanceof Date && !isNaN(a.createdAt.getTime()) 
+            ? a.createdAt.getTime() 
+            : new Date(a.createdAt as unknown as string | number).getTime();
+          const bTime = b.createdAt instanceof Date && !isNaN(b.createdAt.getTime()) 
+            ? b.createdAt.getTime() 
+            : new Date(b.createdAt as unknown as string | number).getTime();
+          
+          // Primary sort: by timestamp (ascending - oldest first)
+          if (aTime !== bTime) {
+            return aTime - bTime;
+          }
+          
+          // Secondary sort: by message ID for stable sorting when timestamps are equal
+          return (a.id || '').localeCompare(b.id || '');
+        });
+
         // Assign defaults and ensure consistency
         const conversation: Conversation = {
           ...item,
@@ -116,7 +134,7 @@ export class StorageService implements IStorageService {
           updatedAt: item.updatedAt, // Already parsed Date object
           userId: item.userId || userId,
           isLocal: true,
-          messages: item.messages as ChatMessage[],
+          messages: sortedMessages,
           modelUsed: item.modelUsed || null,
         };
         conversations.push(conversation);
@@ -151,6 +169,23 @@ export class StorageService implements IStorageService {
           msg.createdAt = msg.createdAt instanceof Date && !isNaN(msg.createdAt.getTime()) ? msg.createdAt : new Date();
           msg.role = msg.role || 'assistant';
           msg.content = msg.content ?? '';
+        });
+        
+        // Sort messages by createdAt before saving to ensure consistent order
+        conv.messages.sort((a, b) => {
+          const aTime = a.createdAt instanceof Date && !isNaN(a.createdAt.getTime()) 
+            ? a.createdAt.getTime() 
+            : new Date(a.createdAt as unknown as string | number).getTime();
+          const bTime = b.createdAt instanceof Date && !isNaN(b.createdAt.getTime()) 
+            ? b.createdAt.getTime() 
+            : new Date(b.createdAt as unknown as string | number).getTime();
+          
+          if (aTime !== bTime) {
+            return aTime - bTime;
+          }
+          
+          // Stable sort by ID when timestamps are equal
+          return (a.id || '').localeCompare(b.id || '');
         });
       });
       const dataToStore = JSON.stringify(conversations);
@@ -270,7 +305,27 @@ export class StorageService implements IStorageService {
       const localConvos = await this.getLocalConversations(userId);
       const localConversation = localConvos.find(c => c.id === id);
       if (localConversation) {
-        return localConversation;
+        // Ensure messages are sorted by createdAt (should already be sorted, but double-check)
+        const sortedMessages = [...localConversation.messages].sort((a, b) => {
+          const aTime = a.createdAt instanceof Date && !isNaN(a.createdAt.getTime()) 
+            ? a.createdAt.getTime() 
+            : new Date(a.createdAt as unknown as string | number).getTime();
+          const bTime = b.createdAt instanceof Date && !isNaN(b.createdAt.getTime()) 
+            ? b.createdAt.getTime() 
+            : new Date(b.createdAt as unknown as string | number).getTime();
+          
+          if (aTime !== bTime) {
+            return aTime - bTime;
+          }
+          
+          // Stable sort by ID when timestamps are equal
+          return (a.id || '').localeCompare(b.id || '');
+        });
+        
+        return {
+          ...localConversation,
+          messages: sortedMessages,
+        };
       }
 
       const { data: convoData, error: convoError } = await this.supabase
@@ -371,8 +426,16 @@ export class StorageService implements IStorageService {
         };        
         localConvos.push(newConversation);
         await this.saveLocalConversations(userId, localConvos);
-        const { messages: _messages, ...summary } = newConversation;
-        return summary;
+        // Return conversation summary without messages
+        return {
+          id: newConversation.id,
+          title: newConversation.title,
+          createdAt: newConversation.createdAt,
+          updatedAt: newConversation.updatedAt,
+          userId: newConversation.userId,
+          isLocal: newConversation.isLocal,
+          modelUsed: newConversation.modelUsed,
+        };
       } else {
         const insertData = {
           user_id: userId,
@@ -423,19 +486,28 @@ export class StorageService implements IStorageService {
     isLocal: boolean
   ): Promise<void> {
     const now = new Date();
-      const messageToAdd: ChatMessage = {
-        ...message,
-        id: isLocal ? (message.id || this.generateLocalId()) : (message.id || uuidv4()),
-        conversationId: conversationId,
-        userId: userId,
-        createdAt:
-          message.createdAt instanceof Date && !isNaN(message.createdAt.getTime())
-            ? message.createdAt
-            : now,
-        role: message.role || 'assistant',
-        content: message.content ?? '',
-        metadata: message.metadata,
-      };      
+    // Use the message's createdAt if valid, otherwise use current time
+    // For local messages, ensure we have a valid timestamp
+    let messageCreatedAt: Date;
+    if (message.createdAt instanceof Date && !isNaN(message.createdAt.getTime())) {
+      messageCreatedAt = message.createdAt;
+    } else if (message.createdAt) {
+      const parsed = new Date(message.createdAt as string | number);
+      messageCreatedAt = !isNaN(parsed.getTime()) ? parsed : new Date();
+    } else {
+      messageCreatedAt = new Date();
+    }
+    
+    const messageToAdd: ChatMessage = {
+      ...message,
+      id: isLocal ? (message.id || this.generateLocalId()) : (message.id || uuidv4()),
+      conversationId: conversationId,
+      userId: userId,
+      createdAt: messageCreatedAt,
+      role: message.role || 'assistant',
+      content: message.content ?? '',
+      metadata: message.metadata,
+    };      
       if (isLocal) {
         const localConvos = await this.getLocalConversations(userId);
         const convoIndex = localConvos.findIndex(c => c.id === conversationId);
@@ -444,6 +516,22 @@ export class StorageService implements IStorageService {
             return;
           }
           localConvos[convoIndex].messages.push(messageToAdd);
+          // Sort messages after adding to ensure correct order
+          localConvos[convoIndex].messages.sort((a, b) => {
+            const aTime = a.createdAt instanceof Date && !isNaN(a.createdAt.getTime()) 
+              ? a.createdAt.getTime() 
+              : new Date(a.createdAt as unknown as string | number).getTime();
+            const bTime = b.createdAt instanceof Date && !isNaN(b.createdAt.getTime()) 
+              ? b.createdAt.getTime() 
+              : new Date(b.createdAt as unknown as string | number).getTime();
+            
+            if (aTime !== bTime) {
+              return aTime - bTime;
+            }
+            
+            // Stable sort by ID when timestamps are equal
+            return (a.id || '').localeCompare(b.id || '');
+          });
           localConvos[convoIndex].updatedAt = now;
           await this.saveLocalConversations(userId, localConvos);
         } else {
@@ -455,6 +543,8 @@ export class StorageService implements IStorageService {
           user_id: userId,
           role: messageToAdd.role,
           content: messageToAdd.content,
+          // Note: created_at is auto-generated by Supabase with default now()
+          // We don't set it explicitly to avoid conflicts
           ...(messageToAdd.metadata !== null && messageToAdd.metadata !== undefined && { metadata: messageToAdd.metadata }),
           name: messageToAdd.name,
           tool_invocations: messageToAdd.toolInvocations,
@@ -468,7 +558,7 @@ export class StorageService implements IStorageService {
         if (error) {
           throw error;
         }
-        await this.supabase.from('conversations').update({ updated_at: now }).eq('id', conversationId);      }
+        await this.supabase.from('conversations').update({ updated_at: now.toISOString() }).eq('id', conversationId);      }
   }
 
   // deleteMessage: remove a message by id from a conversation

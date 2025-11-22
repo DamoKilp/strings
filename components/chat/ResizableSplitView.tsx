@@ -64,6 +64,8 @@ export function ResizableSplitView({
   }, []);
 
   // Keep activeTab valid when codeBlocks change
+  // Validate and correct activeTab index to ensure UI consistency
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (codeBlocks.length > 0 && (activeTab < 0 || activeTab >= codeBlocks.length)) {
       setActiveTab(0);

@@ -15,9 +15,21 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Image, Palette, Layers, ChevronRight, Rocket, Gamepad2 } from "lucide-react";
 import { useBackgroundMode } from "./contexts/BackgroundModeContext";
+
+type FacadePreset =
+  | 'intense'
+  | 'purple-dream'
+  | 'midnight'
+  | 'ocean'
+  | 'lavender'
+  | 'boring-white'
+  | 'boring-black'
+  | 'sunset-triad'
+  | 'aurora-triad'
+  | 'tropical-triad'
+  | 'cosmic-triad';
 
 interface BackgroundToggleProps {
   size?: "sm" | "lg" | "default" | "icon";
@@ -43,6 +55,8 @@ export function BackgroundToggle({
   const [mounted, setMounted] = useState(false);
   const { backgroundMode, facadePreset, setBackgroundMode, setFacadePreset } = useBackgroundMode();
 
+  // Hydration safety pattern: set mounted state after initial render to prevent hydration mismatch
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -186,7 +200,7 @@ export function BackgroundToggle({
                 <DropdownMenuRadioGroup 
                   value={facadePreset} 
                   onValueChange={(value) => {
-                    setFacadePreset(value as any);
+                    setFacadePreset(value as FacadePreset);
                     setBackgroundMode('facade');
                   }}
                 >

@@ -198,11 +198,11 @@ export function OuterSidebar() {
                 )}
                 <DropdownMenuItem asChild>
                   <Link href="/" className="flex items-center gap-2 w-full text-gray-300 hover:bg-gray-900! hover:text-white! focus:bg-gray-900! focus:text-white!" onClick={() => setIsMobileSheetOpen(false)}>
-                    Home
+                    Home (Chat)
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href="/settings" className="flex items-center gap-2 w-full text-gray-300 hover:bg-gray-900! hover:text-white! focus:bg-gray-900! focus:text-white!" onClick={() => setIsMobileSheetOpen(false)}>
+                  <Link href="/admin" className="flex items-center gap-2 w-full text-gray-300 hover:bg-gray-900! hover:text-white! focus:bg-gray-900! focus:text-white!" onClick={() => setIsMobileSheetOpen(false)}>
                     Settings
                   </Link>
                 </DropdownMenuItem>
@@ -680,15 +680,18 @@ export function OuterSidebar() {
       {/* Spacer */}
       <div className="flex-1" />
       {/* Settings at bottom */}
+      {(() => {
+        const isSettingsActive = _pathname === "/admin" || _pathname === "/settings" || _pathname.startsWith("/admin");
+        return (
       <Link
-        href="/settings"
+        href="/admin"
         className="my-6 relative group"
         onMouseEnter={() => setHoveredIcon("Settings")}
         onMouseLeave={() => setHoveredIcon(null)}
       >
         <div className={`
           rounded-xl transition-all duration-300
-          ${hoveredIcon === "Settings"
+          ${isSettingsActive || hoveredIcon === "Settings"
             ? 'bg-gradient-to-br text-white shadow-lg transform scale-105'
             : 'text-gray-100 hover:text-white hover:shadow-md'
           }
@@ -699,7 +702,7 @@ export function OuterSidebar() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: hoveredIcon === "Settings"
+          background: isSettingsActive || hoveredIcon === "Settings"
             ? 'linear-gradient(135deg, from-indigo-500 to-purple-600)'
             : 'rgba(255, 255, 255, 0.1)',
           backdropFilter: 'blur(8px)',
@@ -707,9 +710,9 @@ export function OuterSidebar() {
         }}>
           <Settings
             size={24}
-            className={hoveredIcon === "Settings" ? 'text-white' : 'text-indigo-300'}
+            className={isSettingsActive || hoveredIcon === "Settings" ? 'text-white' : 'text-indigo-300'}
             style={{
-              filter: hoveredIcon === "Settings" ? 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))' : 'none',
+              filter: isSettingsActive || hoveredIcon === "Settings" ? 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))' : 'none',
               transition: 'all 0.3s ease'
             }}
           />
@@ -719,6 +722,8 @@ export function OuterSidebar() {
           Settings
         </div>
       </Link>
+        );
+      })()}
       {/* Performance Monitoring removed */}
       {/* Audit Panel removed */}
     </nav>

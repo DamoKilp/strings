@@ -18,18 +18,23 @@ export async function POST(req: NextRequest) {
     // Prefer RPC if available to enforce constraints
     const hasRpc = true
     if (hasRpc) {
-      const { error } = await (supabase as any).rpc('upsert_agent_preference', {
+      // Note: Type assertion needed due to Supabase RPC type system limitations
+      // RPC functions require generated database types for full type safety
+      // @ts-expect-error - Supabase RPC types require generated database schema
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await supabase.rpc('upsert_agent_preference', {
         p_user_id: user.id,
         p_agent_id: agentId || null,
         p_agent_builtin_id: agentBuiltinId || null,
         p_is_enabled: !!isEnabled,
-        p_sort_order: typeof sortOrder === 'number' ? sortOrder : (null as any),
-      })
+        p_sort_order: typeof sortOrder === 'number' ? sortOrder : null,
+      } as any)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       return NextResponse.json({ ok: true })
     }
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Failed to save preference' }, { status: 500 })
+  } catch (e: unknown) {
+    const errorMessage = e instanceof Error ? e.message : 'Failed to save preference'
+    return NextResponse.json({ error: errorMessage }, { status: 500 })
   }
 }
 

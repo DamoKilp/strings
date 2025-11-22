@@ -21,9 +21,11 @@ import { CollapsedSidebar } from './CollapsedSidebar';
 import { Button } from '@/components/ui/button';
 import { TrashIcon } from './SidebarIcons';
 import { ListChecks, XIcon, Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import type { ConversationSummary } from '@/lib/types';
 
 export function Sidebar({ defaultCollapsed = true }: { defaultCollapsed?: boolean } = {}) {
+  const router = useRouter();
   const {
     conversationList,
     activeConversationId,
@@ -426,6 +428,7 @@ export function Sidebar({ defaultCollapsed = true }: { defaultCollapsed?: boolea
                   onClearLocal={() => openClearDialog('local')}
                   onClearCloud={() => openClearDialog('remote')}
                   onClearAll={() => openClearDialog('all')}
+                  onSettings={() => router.push('/admin')}
                 />
               </motion.div>
             )}

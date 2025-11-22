@@ -6,6 +6,8 @@ import { ChatProvider } from "@/components/contexts/ChatProvider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { BackgroundModeProvider } from "@/components/contexts/BackgroundModeContext";
 import OuterSidebarClient from "@/components/outerSidebar/OuterSidebarClient";
+import { ThemedBackground } from "@/components/themed-background";
+import { BodyBackgroundController } from "@/components/BodyBackgroundController";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,9 +31,17 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`} style={{ background: 'var(--background-gradient, rgba(255,255,255,0.3))' }}>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`} style={{ background: 'var(--background-gradient, rgba(255,255,255,0.9))' }}>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
           <BackgroundModeProvider>
+            {/* 
+              Global Background System - Applies to ALL pages automatically
+              - BodyBackgroundController: Makes body transparent when facade/image mode is active
+              - ThemedBackground: Renders FacadeBackground or image backgrounds
+              See: docs/__Specifications/11_GlobalBackgroundSystem.md
+            */}
+            <BodyBackgroundController />
+            <ThemedBackground />
           <ChatProvider>
             {/* Fixed outer sidebar rail */}
             <OuterSidebarClient />

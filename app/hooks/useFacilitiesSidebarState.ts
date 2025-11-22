@@ -27,6 +27,8 @@ export function useFacilitiesSidebarState() {
         const storedValue = stored === 'true'
         if (storedValue !== DEFAULT_OPEN) {
           // Only update if different from default to avoid flash
+          // Initialization effect: restore sidebar state from localStorage
+          // eslint-disable-next-line react-hooks/set-state-in-effect
           setIsOpen(storedValue)
         }
       }

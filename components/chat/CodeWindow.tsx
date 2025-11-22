@@ -162,14 +162,15 @@ const CodeWindow: React.FC<CodeWindowProps> = ({
     });
   };
 
-  // JSON Validation
+  // JSON Validation - validate JSON syntax and update error state
+  // This effect is necessary to provide real-time validation feedback
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (contentType === "application/json" || validLanguage === "json") {
       try {
         JSON.parse(code);
         setJsonError(null);
       } catch (error: unknown) {
-
         setJsonError(
           `Invalid JSON: ${
             error instanceof Error ? error.message : "Syntax error"

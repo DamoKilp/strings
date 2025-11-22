@@ -330,6 +330,248 @@ export type Database = {
         }
         Relationships: []
       }
+      finance_accounts: {
+        Row: {
+          account_type: string
+          balance: number
+          created_at: string
+          currency: string
+          id: string
+          is_active: boolean
+          name: string
+          sort_order: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          account_type: string
+          balance?: number
+          created_at?: string
+          currency?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          sort_order?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          account_type?: string
+          balance?: number
+          created_at?: string
+          currency?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          sort_order?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      finance_bills: {
+        Row: {
+          amount: number
+          billing_account_id: string | null
+          category: string | null
+          charge_cycle: string
+          company_name: string
+          created_at: string
+          id: string
+          is_active: boolean
+          next_due_date: string
+          notes: string | null
+          sort_order: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          billing_account_id?: string | null
+          category?: string | null
+          charge_cycle: string
+          company_name: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          next_due_date: string
+          notes?: string | null
+          sort_order?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          billing_account_id?: string | null
+          category?: string | null
+          charge_cycle?: string
+          company_name?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          next_due_date?: string
+          notes?: string | null
+          sort_order?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_bills_billing_account_id_fkey"
+            columns: ["billing_account_id"]
+            isOneToOne: false
+            referencedRelation: "finance_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      finance_monthly_snapshots: {
+        Row: {
+          account_balances: Json
+          bill_statuses: Json
+          cash_flow_data: Json | null
+          created_at: string
+          id: string
+          month_year: string
+          notes: string | null
+          snapshot_date: string
+          user_id: string
+        }
+        Insert: {
+          account_balances: Json
+          bill_statuses: Json
+          cash_flow_data?: Json | null
+          created_at?: string
+          id?: string
+          month_year: string
+          notes?: string | null
+          snapshot_date: string
+          user_id: string
+        }
+        Update: {
+          account_balances?: Json
+          bill_statuses?: Json
+          cash_flow_data?: Json | null
+          created_at?: string
+          id?: string
+          month_year?: string
+          notes?: string | null
+          snapshot_date?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      finance_projections: {
+        Row: {
+          account_balances: Json
+          bills_amount: number
+          bills_remaining: number
+          cash_available: number
+          cash_per_week: number | null
+          created_at: string
+          days_remaining: number
+          id: string
+          notes: string | null
+          projection_date: string
+          spending_per_day: number | null
+          total_available: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          account_balances: Json
+          bills_amount?: number
+          bills_remaining: number
+          cash_available: number
+          cash_per_week?: number | null
+          created_at?: string
+          days_remaining: number
+          id?: string
+          notes?: string | null
+          projection_date: string
+          spending_per_day?: number | null
+          total_available: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          account_balances?: Json
+          bills_amount?: number
+          bills_remaining?: number
+          cash_available?: number
+          cash_per_week?: number | null
+          created_at?: string
+          days_remaining?: number
+          id?: string
+          notes?: string | null
+          projection_date?: string
+          spending_per_day?: number | null
+          total_available?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      finance_transactions: {
+        Row: {
+          account_id: string
+          amount: number
+          bill_id: string | null
+          category: string | null
+          created_at: string
+          description: string
+          id: string
+          is_recurring: boolean
+          notes: string | null
+          transaction_date: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          account_id: string
+          amount: number
+          bill_id?: string | null
+          category?: string | null
+          created_at?: string
+          description: string
+          id?: string
+          is_recurring?: boolean
+          notes?: string | null
+          transaction_date: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          account_id?: string
+          amount?: number
+          bill_id?: string | null
+          category?: string | null
+          created_at?: string
+          description?: string
+          id?: string
+          is_recurring?: boolean
+          notes?: string | null
+          transaction_date?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_transactions_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "finance_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "finance_transactions_bill_id_fkey"
+            columns: ["bill_id"]
+            isOneToOne: false
+            referencedRelation: "finance_bills"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       health_profiles: {
         Row: {
           birth_date: string | null
@@ -985,4 +1227,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-

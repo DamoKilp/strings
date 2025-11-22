@@ -8,8 +8,19 @@ export function BackgroundDebugger() {
   const [mounted, setMounted] = useState(false);
   const { backgroundMode, facadePreset } = useBackgroundMode();
   const { theme, resolvedTheme } = useTheme();
-  const [bodyStyles, setBodyStyles] = useState<any>({});
+  interface BodyStyles {
+    background: string;
+    backgroundColor: string;
+    className: string;
+  }
+  const [bodyStyles, setBodyStyles] = useState<BodyStyles>({
+    background: '',
+    backgroundColor: '',
+    className: '',
+  });
 
+  // Hydration safety pattern: set mounted state after initial render to prevent hydration mismatch
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     setMounted(true);
     

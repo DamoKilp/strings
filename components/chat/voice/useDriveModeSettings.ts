@@ -40,6 +40,8 @@ export function useDriveModeSettings() {
   const [settings, setSettings] = useState<DriveModeSettings>(getDefaultDriveModeSettings());
   const [loaded, setLoaded] = useState(false);
 
+  // Initialization effect: load saved settings from localStorage on mount
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);

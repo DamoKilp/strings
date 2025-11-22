@@ -11,7 +11,7 @@ interface HeightOptions {
 }
 
 // Debounce function utility
-function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
+function debounce<T extends (...args: unknown[]) => unknown>(func: T, wait: number): (...args: Parameters<T>) => void {
   let timeoutId: NodeJS.Timeout | null = null;
   return (...args: Parameters<T>) => {
     if (timeoutId) {

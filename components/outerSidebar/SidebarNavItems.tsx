@@ -7,11 +7,11 @@ import { Permission } from '@/types/rbac';
 // Modern, full-color icons from react-icons for Zen browser-like appearance
 import {
   MdHome,
-  MdDashboard,
   MdShield,
   MdNavigation,
   MdGames,
   MdCloudUpload,
+  MdAccountBalance,
 } from 'react-icons/md';
 import {
   BsGraphUpArrow,
@@ -44,12 +44,12 @@ const NAV_ITEMS = [
     gradient: "from-emerald-500 to-teal-600"
   },
   {
-    href: "/Projects/projectManagement",
-    icon: MdDashboard,
-    label: "Projects",
-    color: "#0ea5e9", // sky blue
+    href: "/finance",
+    icon: MdAccountBalance,
+    label: "Finance",
+    color: "#3b82f6", // blue
     visible: true,
-    gradient: "from-sky-500 to-blue-600"
+    gradient: "from-blue-500 to-cyan-600"
   },
   {
     href: "/admin",
@@ -129,11 +129,11 @@ export function SidebarNavItems({
     >
       {navItems.map((item) => {
         const isActive = 
-          item.href === "/Projects/projectManagement"
-            ? pathname.startsWith("/Projects")
+          item.href === "/"
+            ? pathname === "/" // Home is active only on exact root path
             : item.href === "/admin"
-            ? pathname.startsWith("/admin")
-            : pathname === item.href;
+            ? pathname.startsWith("/admin") || pathname === "/settings"
+            : pathname.startsWith(item.href);
 
         // Regular nav item (non-Projects or when on Projects page)
         return (

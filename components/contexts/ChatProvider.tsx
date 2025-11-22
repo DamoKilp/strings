@@ -268,6 +268,7 @@ function loadConversationSettings(conversationId: string, availableModels: LLMMo
 // --- Determine Default Model ---
 const availableModels: LLMModel[] = modelsData.models as LLMModel[];
 const defaultModel =
+  availableModels.find((m) => m.id === 'gpt-5.1') ||
   availableModels.find((m) => m.id === 'gpt-5') ||
   availableModels.find((m) => m.providerId === 'openai') ||
   availableModels[0];

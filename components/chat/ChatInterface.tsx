@@ -23,7 +23,7 @@ import { MessageItem } from '@/components/chat/MessageItem';
 import { ResizableSplitView } from '@/components/chat/ResizableSplitView';
 import dynamic from 'next/dynamic';
 import modelsData from '@/lib/models.json';
-import type { LLMModel, ChatMessage } from '@/lib/types';
+import type { LLMModel, ChatMessage, AgentDefinition, AgentPreference } from '@/lib/types';
 import type { CodeBlock } from '@/lib/codeUtils';
 import { extractCodeBlocks, enhancedCodeExtraction } from '@/lib/codeUtils';
 // --- ADDED: Import prePrompts data ---
@@ -46,6 +46,7 @@ const allowedModelIds: string[] = [
   'gpt-5-chat-latest',
   'gpt-5-2025-08-07',
   'gpt-5',
+  'gpt-5.1',
 ];
 const availableModels: LLMModel[] = (modelsData.models as LLMModel[]).filter(m => allowedModelIds.includes(m.id));
 
@@ -54,7 +55,7 @@ function parseTimestamp(ts: Date | string | number): number {
   if (typeof ts === 'number') return ts;
 
   if (typeof ts === 'string') {
-    let iso = ts
+    const iso = ts
       .trim()
       .replace(' ', 'T')
       .replace(/([+\-]\d{2})(\d{2})?$/, (_, h, m = '00') => `${h}:${m}`);
@@ -109,7 +110,7 @@ export function ChatInterface() {
   const [codeBlocks, setCodeBlocks] = useState<CodeBlock[]>([]);
   const [userClosedCodeSection, setUserClosedCodeSection] = useState(false);
   const [documentMarkdown, setDocumentMarkdown] = useState<string>("");
-  const [documentChartSpec, setDocumentChartSpec] = useState<any>(null);
+  const [documentChartSpec, setDocumentChartSpec] = useState<unknown>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [expandedCodeBlocks, setExpandedCodeBlocks] = useState<Record<string, boolean>>({});
   // Drive Mode state
@@ -146,7 +147,7 @@ export function ChatInterface() {
       i,
       t: m?.createdAt instanceof Date && !isNaN(m.createdAt.getTime())
         ? m.createdAt.getTime()
-        : new Date(m?.createdAt as any ?? Date.now()).getTime(),
+        : new Date((m?.createdAt as unknown as string | number) ?? Date.now()).getTime(),
     }));
     withSafeDates.sort((a, b) => {
       if (a.t !== b.t) return a.t - b.t; // ascending chronological
@@ -166,7 +167,12 @@ export function ChatInterface() {
         if (typeof m.content === 'string') return m.content;
         if (Array.isArray(m.content)) {
           return m.content
-            .map(p => (p && (p as any).type === 'text' ? (p as { type: 'text'; text: string }).text : ''))
+            .map(p => {
+              if (p && typeof p === 'object' && 'type' in p && p.type === 'text' && 'text' in p) {
+                return (p as { type: 'text'; text: string }).text;
+              }
+              return '';
+            })
             .join(' ')
             .trim();
         }
@@ -181,7 +187,12 @@ export function ChatInterface() {
       const m = sortedMessages[i];
       if (m && m.role === 'user') {
         if (Array.isArray(m.content)) {
-          return m.content.reduce((acc, p) => acc + ((p as any).type === 'image' ? 1 : 0), 0);
+          return m.content.reduce((acc, p) => {
+            if (p && typeof p === 'object' && 'type' in p && p.type === 'image') {
+              return acc + 1;
+            }
+            return acc;
+          }, 0);
         }
         return 0;
       }
@@ -593,7 +604,7 @@ export function ChatInterface() {
         }
 
         // Use enhanced extraction for better code block parsing
-        let blocks = enhancedCodeExtraction(text);
+        const blocks = enhancedCodeExtraction(text);
         setCodeBlocks(blocks);
 
         const hasLargeCodeBlock = blocks.some(
@@ -738,7 +749,7 @@ export function ChatInterface() {
           <div
             className="h-full w-full overflow-y-auto p-4 pt-2 pb-2 custom-scrollbar relative bg-transparent"
             ref={scrollAreaRef}
-            style={{ ['paddingBottom' as any]: (sortedMessages.length === 0 ? 'clamp(60px, 10vh, 120px)' : 'clamp(30px, 12vh, 50px)') }}
+            style={{ paddingBottom: (sortedMessages.length === 0 ? 'clamp(60px, 10vh, 120px)' : 'clamp(30px, 12vh, 50px)') } as React.CSSProperties}
           >
             {/* Empty state welcome when there are no messages and not loading */}
             {sortedMessages.length === 0 && !isLoadingMessages && (
@@ -959,8 +970,8 @@ export function ChatInterface() {
         open={isAgentManagerOpen}
         onOpenChange={setIsAgentManagerOpen}
         builtins={prePrompts.map(p => ({ id: p.id, name: p.name, description: p.description, content: p.content }))}
-        initialCustomAgents={customAgents as any}
-        initialPreferences={agentPreferences as any}
+        initialCustomAgents={customAgents as AgentDefinition[]}
+        initialPreferences={agentPreferences as AgentPreference[]}
       />
     </div>
   );

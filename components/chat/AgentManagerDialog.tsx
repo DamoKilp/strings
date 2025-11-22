@@ -7,7 +7,7 @@
 // - Integration: emits `agents-updated` window event after mutations so `ChatProvider` reloads data, keeping `AgentSelector` in sync.
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContentGlass, DialogHeaderGlass, DialogFooterGlass, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import type { AgentDefinition, AgentPreference } from '@/lib/types';
 import { AgentManagerLayout } from '@/components/chat/agentManager/AgentManagerLayout';
@@ -33,7 +33,7 @@ export function AgentManagerDialog({ open, onOpenChange, builtins, initialCustom
   // Architecture notes: Two-pane dialog shell. Left shows enabled agents with DnD reordering and toggle. Right provides editor for custom agents.
   // State and persistence are handled by useAgentManagerState to centralize optimistic updates and API calls.
   const manager = useAgentManagerState({ builtins, initialCustomAgents, initialPreferences });
-  const { unifiedEnabledList, allUnifiedList, disabledList, selectByKey, selectedUnified, isBusy, toggleEnabled, persistReorder, saveCustomAgent, deleteCustomAgent, customAgents } = manager as any;
+  const { unifiedEnabledList, allUnifiedList, disabledList, selectByKey, selectedUnified, toggleEnabled, saveCustomAgent, deleteCustomAgent, customAgents } = manager;
   const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   useEffect(() => {
@@ -68,7 +68,7 @@ export function AgentManagerDialog({ open, onOpenChange, builtins, initialCustom
                 variant="glass"
                 className="glass-small glass-interactive h-9 px-3 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/20 hover:from-blue-500/30 hover:to-blue-600/30"
                 onClick={() => {
-                  selectByKey(null as any);
+                  selectByKey(null);
                   try {
                     const el = document.getElementById('agent-create-section');
                     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -100,7 +100,7 @@ export function AgentManagerDialog({ open, onOpenChange, builtins, initialCustom
                 <div className="rightpane-card-title mb-1">Available agents (disabled)</div>
                 <div className="rightpane-card-subtitle mb-3">Enable by toggling or drag back in future iteration.</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {disabledList.map((ua: any) => (
+                  {disabledList.map((ua) => (
                     <div key={ua.key} className="p-2 border rounded-md bg-background/60 flex items-center gap-2">
                       <span className="text-xs font-medium truncate flex-1">{ua.name}</span>
                       <button
@@ -138,11 +138,11 @@ export function AgentManagerDialog({ open, onOpenChange, builtins, initialCustom
                       description: selectedUnified.description,
                       iconKey: selectedUnified.iconKey,
                       colorHex: selectedUnified.colorHex,
-                      content: (customAgents?.find((a: any) => a.id === selectedUnified.id)?.content) || ''
+                      content: (customAgents?.find((a) => a.id === selectedUnified.id)?.content) || ''
                     }}
-                    onCancel={() => selectByKey(null as any)}
+                    onCancel={() => selectByKey(null)}
                     onSave={async (p) => { await saveCustomAgent(p, false); }}
-                    onDelete={async () => { await deleteCustomAgent(selectedUnified.id); selectByKey(null as any); }}
+                    onDelete={async () => { await deleteCustomAgent(selectedUnified.id); selectByKey(null); }}
                   />
                 )}
                 {selectedUnified && selectedUnified.kind === 'builtin' && (

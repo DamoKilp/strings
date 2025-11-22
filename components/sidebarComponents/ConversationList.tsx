@@ -31,6 +31,7 @@ import {
 
 // --- Model Map Definition ---
 const modelMap = new Map<string, { providerId: string; name: string }>([
+  ["gpt-5.1", { providerId: "openai", name: "GPT-5.1" }],
   ["gpt-5", { providerId: "openai", name: "GPT-5" }],
   ["gpt-4.1", { providerId: "openai", name: "GPT-4.1" }],
   ["gpt-4o", { providerId: "openai", name: "GPT-4o" }],

@@ -12,16 +12,27 @@ export async function POST(req: NextRequest) {
 
   try {
     const { start = '08:00', end = '21:00' } = await req.json().catch(() => ({}))
+    interface UserPreferencePayload {
+      user_id: string;
+      nudge_settings: {
+        allowed_hours: { start: string; end: string };
+        frequency: string;
+      };
+    }
+    // Note: Type assertion needed due to Supabase type system limitations
+    // The database types need to be properly generated for full type safety
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await supabase
       .from('user_preferences')
       .upsert({
         user_id: user.id,
         nudge_settings: { allowed_hours: { start, end }, frequency: 'medium' },
-      }, { onConflict: 'user_id' })
+      } as any, { onConflict: 'user_id' })
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ ok: true, start, end })
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Failed' }, { status: 500 })
+  } catch (e: unknown) {
+    const errorMessage = e instanceof Error ? e.message : 'Failed'
+    return NextResponse.json({ error: errorMessage }, { status: 500 })
   }
 }
 

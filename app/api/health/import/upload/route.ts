@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
 
     // Register import job (queued)
     console.log('[UPLOAD] Registering import job...')
-    const { data: jobId, error: regError } = await supabase
+    const { data: jobId, error: regError } = await (supabase as any)
       .rpc('register_import_job', {
         p_user_id: user.id,
         p_source: 'garmin_zip',

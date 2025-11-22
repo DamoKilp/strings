@@ -49,8 +49,8 @@ import { AgentSelector } from './AgentSelector';
 import { PrePrompt } from '@/components/data/prePrompts';
 import { ImagePreview } from '@/components/chat/ImagePreview';
 import { useChatContext } from '@/components/contexts/ChatProvider';
+import type { ChatFontSize } from '@/lib/types';
 // Ingestion removed
-import { BookOpen } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { TableSearchSettingsModal } from '@/components/ui/table-search-settings-modal';
 // (removed unused SettingsIcon)
@@ -685,10 +685,10 @@ export function ChatInput({
                   <TooltipTrigger asChild>
                     <div className="flex items-center gap-1 px-1 py-0.5 rounded-md border border-slate-700/60 text-slate-300">
                       {(() => {
-                        const SCALE = ['xs','s','sm','md','lg','xl','xxl'] as const;
-                        const idx = SCALE.indexOf(chatFontSize as any);
-                        const dec = () => setChatFontSize(SCALE[Math.max(0, idx - 1)] as any);
-                        const inc = () => setChatFontSize(SCALE[Math.min(SCALE.length - 1, idx + 1)] as any);
+                        const SCALE: readonly ChatFontSize[] = ['xs','s','sm','md','lg','xl','xxl'];
+                        const idx = SCALE.indexOf(chatFontSize);
+                        const dec = () => setChatFontSize(SCALE[Math.max(0, idx - 1)]);
+                        const inc = () => setChatFontSize(SCALE[Math.min(SCALE.length - 1, idx + 1)]);
                         return (
                           <>
                             <button

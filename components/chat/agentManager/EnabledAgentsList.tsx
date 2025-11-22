@@ -32,8 +32,8 @@ function SortableRow({ id, children }: { id: string; children: React.ReactNode }
   } as React.CSSProperties;
   return (
     <div ref={setNodeRef} style={style} {...attributes}>
-      {children instanceof Object && 'props' in (children as any)
-        ? React.cloneElement(children as any, { dragHandleProps: listeners })
+      {React.isValidElement(children)
+        ? React.cloneElement(children as React.ReactElement<{ dragHandleProps?: React.HTMLAttributes<HTMLButtonElement> }>, { dragHandleProps: listeners })
         : children}
     </div>
   );

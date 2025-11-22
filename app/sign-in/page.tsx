@@ -6,21 +6,32 @@ import { FormMessage, Message } from "@/components/form-message";
 import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ThemedBackground } from "@/components/themed-background";
+// ThemedBackground is now in root layout - no need to import here
 
 type TabType = 'signin' | 'signup';
 
 export default function Login({ searchParams }: { searchParams: Promise<Message> }) {
   const [activeTab, setActiveTab] = useState<TabType>('signin');
   const [params, setParams] = useState<Message>({ message: '' });
+  const [configCheck, setConfigCheck] = useState<{ hasUrl: boolean; hasKey: boolean } | null>(null);
   
   useEffect(() => {
     searchParams.then(setParams);
+    // Check if Supabase config is available (client-side only)
+    // Note: NEXT_PUBLIC_ vars are available on client, but we check at runtime
+    if (typeof window !== 'undefined') {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      setConfigCheck({
+        hasUrl: !!supabaseUrl && supabaseUrl.length > 0,
+        hasKey: !!supabaseKey && supabaseKey.length > 0,
+      });
+    }
   }, [searchParams]);
 
   return (
     <>
-      <ThemedBackground />
+      {/* ThemedBackground is provided by root layout - no need to render here */}
       <div className="flex min-h-screen w-full items-center justify-center p-4">
         <div className="w-full max-w-6xl grid lg:grid-cols-2 gap-8 items-center">
           
@@ -135,6 +146,19 @@ export default function Login({ searchParams }: { searchParams: Promise<Message>
                     </SubmitButton>
                     
                     <FormMessage message={params} />
+                    
+                    {/* Configuration check (development only) */}
+                    {process.env.NODE_ENV === 'development' && configCheck && (!configCheck.hasUrl || !configCheck.hasKey) && (
+                      <div className="mt-4 p-3 rounded-lg bg-yellow-500/20 border border-yellow-500/50 text-yellow-200 text-xs">
+                        <p className="font-semibold mb-1">⚠️ Configuration Warning</p>
+                        <p>Missing Supabase environment variables:</p>
+                        <ul className="list-disc list-inside mt-1 space-y-0.5">
+                          {!configCheck.hasUrl && <li>NEXT_PUBLIC_SUPABASE_URL</li>}
+                          {!configCheck.hasKey && <li>NEXT_PUBLIC_SUPABASE_ANON_KEY</li>}
+                        </ul>
+                        <p className="mt-2 text-yellow-300/80">Check your .env file</p>
+                      </div>
+                    )}
                   </form>
                 </>
               ) : (
