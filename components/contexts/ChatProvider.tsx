@@ -1857,47 +1857,49 @@ export function ChatProvider({ children }: ChatProviderProps) {
   // ]);
 
   // --- Effect: Restore Last Active Conversation ---
-  useEffect(() => {
-    if (state.isLoadingUser || state.isLoadingConversationList || state.activeConversationId) { return; }
-    if (state.conversationList.length === 0) { try { localStorage.removeItem(LAST_ACTIVE_CHAT_KEY); } catch(e){} return; }
-    
-    let restored = false;
-    try {
-      const storedInfoRaw = localStorage.getItem(LAST_ACTIVE_CHAT_KEY);
-      if (storedInfoRaw) {
-        const storedInfo = JSON.parse(storedInfoRaw);
-        const lastId = storedInfo?.id;
-        const lastIsLocal = storedInfo?.isLocal;
-        if (typeof lastId === 'string' && typeof lastIsLocal === 'boolean') {
-          const exists = state.conversationList.some(c => c.id === lastId);
-          if (exists && actionsRef.current?.selectConversation) {
-            
-            setTimeout(() => actionsRef.current!.selectConversation(lastId, lastIsLocal), 0);
-            restored = true;
-          } else if (!exists) {
-           
-            localStorage.removeItem(LAST_ACTIVE_CHAT_KEY);
-          }
-        } else {
+  // [DISABLED] Start with a clean slate - no conversation loaded on app open.
+  // Users can manually select a conversation from the sidebar when they're ready.
+  // useEffect(() => {
+  //   if (state.isLoadingUser || state.isLoadingConversationList || state.activeConversationId) { return; }
+  //   if (state.conversationList.length === 0) { try { localStorage.removeItem(LAST_ACTIVE_CHAT_KEY); } catch(e){} return; }
+  //   
+  //   let restored = false;
+  //   try {
+  //     const storedInfoRaw = localStorage.getItem(LAST_ACTIVE_CHAT_KEY);
+  //     if (storedInfoRaw) {
+  //       const storedInfo = JSON.parse(storedInfoRaw);
+  //       const lastId = storedInfo?.id;
+  //       const lastIsLocal = storedInfo?.isLocal;
+  //       if (typeof lastId === 'string' && typeof lastIsLocal === 'boolean') {
+  //         const exists = state.conversationList.some(c => c.id === lastId);
+  //         if (exists && actionsRef.current?.selectConversation) {
+  //           
+  //           setTimeout(() => actionsRef.current!.selectConversation(lastId, lastIsLocal), 0);
+  //           restored = true;
+  //         } else if (!exists) {
+  //          
+  //           localStorage.removeItem(LAST_ACTIVE_CHAT_KEY);
+  //         }
+  //       } else {
 
-          localStorage.removeItem(LAST_ACTIVE_CHAT_KEY);
-        }
-      }
-    } catch (error) {
+  //         localStorage.removeItem(LAST_ACTIVE_CHAT_KEY);
+  //       }
+  //     }
+  //   } catch (error) {
 
-      try { localStorage.removeItem(LAST_ACTIVE_CHAT_KEY); } catch (e) {}
-    }
-    if (!restored && state.conversationList.length > 0 && actionsRef.current?.selectConversation) {
-      const firstConversation = state.conversationList[0];
-     
-      setTimeout(() => actionsRef.current!.selectConversation(firstConversation.id, firstConversation.isLocal), 0);
-    }
-  }, [
-    state.isLoadingUser,
-    state.isLoadingConversationList,
-    state.conversationList,
-    state.activeConversationId
-  ]);
+  //     try { localStorage.removeItem(LAST_ACTIVE_CHAT_KEY); } catch (e) {}
+  //   }
+  //   if (!restored && state.conversationList.length > 0 && actionsRef.current?.selectConversation) {
+  //     const firstConversation = state.conversationList[0];
+  //    
+  //     setTimeout(() => actionsRef.current!.selectConversation(firstConversation.id, firstConversation.isLocal), 0);
+  //   }
+  // }, [
+  //   state.isLoadingUser,
+  //   state.isLoadingConversationList,
+  //   state.conversationList,
+  //   state.activeConversationId
+  // ]);
 
   // --- Load last used agent (global default) on first mount if no conversation-level setting overrides ---
   useEffect(() => {
