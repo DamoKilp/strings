@@ -693,13 +693,133 @@ export default function FinancePageClient({
   }, [billsBreakdown, accounts])
 
   // Memoize projection (only recalculate when dependencies change)
+  // Find the best matching projection from spend tracking based on current date and days remaining
   const projection = useMemo(() => {
-    return calculateCashFlowProjection(
-      accountBalances,
-      billsRemaining,
-      daysRemaining
-    )
-  }, [accountBalances, billsRemaining, daysRemaining])
+    if (!projections.length) {
+      // Fallback to calculated projection if no spend tracking data exists
+      return calculateCashFlowProjection(
+        accountBalances,
+        billsRemaining,
+        daysRemaining
+      )
+    }
+
+    // Determine the reference date for matching
+    // Use today if it's within the current period, otherwise use period start
+    const todayDate = new Date(today)
+    todayDate.setHours(0, 0, 0, 0)
+    const periodStartDate = new Date(payCycleStart)
+    periodStartDate.setHours(0, 0, 0, 0)
+    const periodEndDate = new Date(payCycleEnd)
+    periodEndDate.setHours(0, 0, 0, 0)
+    
+    // Use today if within period, otherwise use period start
+    const referenceDate = (todayDate >= periodStartDate && todayDate <= periodEndDate) 
+      ? todayDate 
+      : periodStartDate
+    
+    // First, try to find exact match on both date and days_remaining
+    let bestMatch = projections.find(p => {
+      const projDate = new Date(p.projection_date)
+      projDate.setHours(0, 0, 0, 0)
+      return projDate.getTime() === referenceDate.getTime() && p.days_remaining === daysRemaining
+    })
+    
+    if (bestMatch) {
+      return {
+        daysRemaining: bestMatch.days_remaining,
+        accountBalances: bestMatch.account_balances,
+        billsAmount: bestMatch.bills_amount,
+        totalAvailable: bestMatch.total_available,
+        billsRemaining: bestMatch.bills_remaining,
+        cashAvailable: bestMatch.cash_available,
+        cashPerWeek: bestMatch.cash_per_week,
+        spendingPerDay: bestMatch.spending_per_day,
+      }
+    }
+    
+    // Second, try to find match on date with closest days_remaining
+    const sameDateProjections = projections.filter(p => {
+      const projDate = new Date(p.projection_date)
+      projDate.setHours(0, 0, 0, 0)
+      return projDate.getTime() === referenceDate.getTime()
+    })
+    
+    if (sameDateProjections.length > 0) {
+      bestMatch = sameDateProjections.reduce((closest, current) => {
+        const closestDiff = Math.abs(closest.days_remaining - daysRemaining)
+        const currentDiff = Math.abs(current.days_remaining - daysRemaining)
+        return currentDiff < closestDiff ? current : closest
+      })
+      
+      return {
+        daysRemaining: bestMatch.days_remaining,
+        accountBalances: bestMatch.account_balances,
+        billsAmount: bestMatch.bills_amount,
+        totalAvailable: bestMatch.total_available,
+        billsRemaining: bestMatch.bills_remaining,
+        cashAvailable: bestMatch.cash_available,
+        cashPerWeek: bestMatch.cash_per_week,
+        spendingPerDay: bestMatch.spending_per_day,
+      }
+    }
+    
+    // Third, try to find match on days_remaining with closest date
+    const sameDaysProjections = projections.filter(p => p.days_remaining === daysRemaining)
+    
+    if (sameDaysProjections.length > 0) {
+      bestMatch = sameDaysProjections.reduce((closest, current) => {
+        const closestDate = new Date(closest.projection_date)
+        closestDate.setHours(0, 0, 0, 0)
+        const currentDate = new Date(current.projection_date)
+        currentDate.setHours(0, 0, 0, 0)
+        const closestDiff = Math.abs(closestDate.getTime() - referenceDate.getTime())
+        const currentDiff = Math.abs(currentDate.getTime() - referenceDate.getTime())
+        return currentDiff < closestDiff ? current : closest
+      })
+      
+      return {
+        daysRemaining: bestMatch.days_remaining,
+        accountBalances: bestMatch.account_balances,
+        billsAmount: bestMatch.bills_amount,
+        totalAvailable: bestMatch.total_available,
+        billsRemaining: bestMatch.bills_remaining,
+        cashAvailable: bestMatch.cash_available,
+        cashPerWeek: bestMatch.cash_per_week,
+        spendingPerDay: bestMatch.spending_per_day,
+      }
+    }
+    
+    // Fourth, find closest match on both date and days_remaining
+    bestMatch = projections.reduce((closest, current) => {
+      const closestDate = new Date(closest.projection_date)
+      closestDate.setHours(0, 0, 0, 0)
+      const currentDate = new Date(current.projection_date)
+      currentDate.setHours(0, 0, 0, 0)
+      
+      const closestDateDiff = Math.abs(closestDate.getTime() - referenceDate.getTime())
+      const currentDateDiff = Math.abs(currentDate.getTime() - referenceDate.getTime())
+      const closestDaysDiff = Math.abs(closest.days_remaining - daysRemaining)
+      const currentDaysDiff = Math.abs(current.days_remaining - daysRemaining)
+      
+      // Weight date difference more heavily (days in milliseconds)
+      const closestScore = closestDateDiff + (closestDaysDiff * 86400000)
+      const currentScore = currentDateDiff + (currentDaysDiff * 86400000)
+      
+      return currentScore < closestScore ? current : closest
+    })
+    
+    return {
+      daysRemaining: bestMatch.days_remaining,
+      accountBalances: bestMatch.account_balances,
+      billsAmount: bestMatch.bills_amount,
+      totalAvailable: bestMatch.total_available,
+      billsRemaining: bestMatch.bills_remaining,
+      cashAvailable: bestMatch.cash_available,
+      cashPerWeek: bestMatch.cash_per_week,
+      spendingPerDay: bestMatch.spending_per_day,
+    }
+  }, [projections, today, daysRemaining, payCycleStart, payCycleEnd, accountBalances, billsRemaining])
 
   // Auto-save bill payment statuses to snapshot (debounced)
   // IMPORTANT: Saves to the currently selected billing period's snapshot, not current month
@@ -1737,7 +1857,7 @@ export default function FinancePageClient({
         {/* Account Balance Requirements + Date in responsive row */}
         <Card className="glass-large mb-2">
           <CardContent className="py-2 sm:py-1">
-            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end sm:justify-between gap-2 sm:gap-x-1.5 sm:gap-y-0.5">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-start sm:justify-start gap-2 sm:gap-x-1.5 sm:gap-y-0.5">
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="glass-text-secondary text-xs font-medium">Account Balance Requirements:</span>
                 <Button
@@ -1758,7 +1878,7 @@ export default function FinancePageClient({
                   return (
                     <div key={account.id} className="flex items-center gap-1 sm:gap-0.5">
                       <span className="glass-text-primary text-xs truncate max-w-[100px] sm:max-w-[70px]">{account.name}:</span>
-                      <span className="glass-text-primary text-xs font-semibold whitespace-nowrap text-red-500">
+                      <span className="text-xs font-semibold whitespace-nowrap text-green-600 dark:text-green-400">
                         {formatCurrency(required)}
                       </span>
                     </div>
