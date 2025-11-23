@@ -36,6 +36,7 @@ import {
   upsertProjection,
   deleteProjection,
   getBillingPeriods,
+  getBillingPeriod,
   createBillingPeriod,
   type FinanceAccount,
   type FinanceBill,
@@ -47,7 +48,6 @@ import {
   calculateBillsBreakdown,
   calculateTotalBillsRemaining,
   calculateCashFlowProjection,
-  getDaysRemainingInMonth,
   getCurrentMonthYear,
   formatCurrency,
   formatNextDueDate,
@@ -89,7 +89,12 @@ export default function FinancePageClient({
   initialSnapshots,
   initialBillPaymentsPaid,
 }: FinancePageClientProps) {
-  const { user } = useAuth()
+  const { user, isLoading: isAuthLoading } = useAuth()
+  
+
+  
+
+  
   const [accounts, setAccounts] = useState<FinanceAccount[]>(initialAccounts)
   const [bills, setBills] = useState<FinanceBill[]>(initialBills)
   const [billPaymentsPaid, setBillPaymentsPaid] = useState<Record<string, number>>(initialBillPaymentsPaid)
@@ -99,7 +104,7 @@ export default function FinancePageClient({
   const [monthlySnapshots, setMonthlySnapshots] = useState<MonthlySnapshot[]>(initialSnapshots)
   const [billingPeriods, setBillingPeriods] = useState<BillingPeriod[]>([])
   const [selectedBillingPeriodId, setSelectedBillingPeriodId] = useState<string | null>(null)
-  const [isPending, startTransition] = useTransition()
+  const [, startTransition] = useTransition()
   
   // Dialog states
   const [isAddAccountDialogOpen, setIsAddAccountDialogOpen] = useState(false)
@@ -335,6 +340,23 @@ export default function FinancePageClient({
     }
   }, [payCycleStart, payCycleEnd])
 
+  // CRITICAL: Ensure pay cycle dates stay in sync with selected billing period
+  // If a billing period is selected, its dates should always match the period's dates
+  // This effect runs when the selected period changes and ensures dates match
+  useEffect(() => {
+    if (selectedBillingPeriodId && billingPeriods.length > 0) {
+      const period = billingPeriods.find(p => p.id === selectedBillingPeriodId)
+      if (period) {
+        // Always sync dates to match the period when period selection changes
+        // This ensures dates are correct even if something else tries to override them
+        const periodStartFormatted = period.start_date.split('T')[0]
+        const periodEndFormatted = period.end_date.split('T')[0]
+        setPayCycleStart(periodStartFormatted)
+        setPayCycleEnd(periodEndFormatted)
+      }
+    }
+  }, [selectedBillingPeriodId, billingPeriods, payCycleStart, payCycleEnd]) // Only sync when period selection changes
+
   // Optimistically update account balance immediately
   const optimisticallyUpdateBalance = useCallback((accountId: string, newBalance: number) => {
     setAccounts(prev => prev.map(acc => 
@@ -437,16 +459,19 @@ export default function FinancePageClient({
 
   // Sync with server-side initial data
   // Use JSON.stringify for array/object comparison to avoid infinite loops
-  const initialAccountsStr = useMemo(() => JSON.stringify(initialAccounts), [initialAccounts])
-  const initialBillsStr = useMemo(() => JSON.stringify(initialBills), [initialBills])
-  const initialProjectionsStr = useMemo(() => JSON.stringify(initialProjections), [initialProjections])
-  const initialSnapshotsStr = useMemo(() => JSON.stringify(initialSnapshots), [initialSnapshots])
-  const initialBillPaymentsPaidStr = useMemo(() => JSON.stringify(initialBillPaymentsPaid), [initialBillPaymentsPaid])
-  
   // Track if we've made client-side modifications to prevent overwriting with stale server data
   const hasClientModifications = useRef(false)
+  // Track if we've already initialized from props to prevent resetting state on revalidation
+  const hasInitialized = useRef(false)
   
+  // 🚀 FIXED: Only initialize state from props on initial mount, not on prop changes from revalidation
+  // This prevents the page from resetting when Next.js revalidates on focus change
   useEffect(() => {
+    // Only initialize once on mount
+    if (hasInitialized.current) {
+      return
+    }
+    
     setAccounts(initialAccounts)
     setBills(initialBills)
     // Only update projections from server if we haven't made client-side modifications
@@ -458,7 +483,10 @@ export default function FinancePageClient({
     }
     setMonthlySnapshots(initialSnapshots)
     setBillPaymentsPaid(initialBillPaymentsPaid)
-  }, [initialAccountsStr, initialBillsStr, initialProjectionsStr, initialSnapshotsStr, initialBillPaymentsPaidStr, projections.length])
+    
+    hasInitialized.current = true
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Only run on mount
 
   // Calculate pay cycle days
   const payCycleDays = useMemo(() => {
@@ -466,7 +494,8 @@ export default function FinancePageClient({
     const end = new Date(payCycleEnd)
     const diffTime = end.getTime() - start.getTime()
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-    return Math.max(0, diffDays)
+    const result = Math.max(0, diffDays)
+    return result
   }, [payCycleStart, payCycleEnd])
 
   // Calculate days remaining in pay cycle
@@ -475,7 +504,8 @@ export default function FinancePageClient({
     const endDate = new Date(payCycleEnd)
     const diffTime = endDate.getTime() - todayDate.getTime()
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-    return Math.max(0, diffDays)
+    const result = Math.max(0, diffDays)
+    return result
   }, [today, payCycleEnd])
 
   // Use pay cycle days remaining for projections instead of month days
@@ -483,8 +513,11 @@ export default function FinancePageClient({
 
   // Calculate bills breakdown with stable dependencies - using pay cycle dates
   const billsBreakdown = useMemo<BillWithRemaining[]>(() => {
-    if (!bills.length) return []
-    return calculateBillsBreakdown(bills, billPaymentsPaid, payCycleStart, payCycleEnd, daysRemaining)
+    if (!bills.length) {
+      return []
+    }
+    const result = calculateBillsBreakdown(bills, billPaymentsPaid, payCycleStart, payCycleEnd, daysRemaining)
+    return result
   }, [bills, billPaymentsPaid, payCycleStart, payCycleEnd, daysRemaining])
 
   // Sorted bills breakdown for table display
@@ -579,10 +612,6 @@ export default function FinancePageClient({
     return sorted
   }, [billsBreakdown, billsSortColumn, billsSortDirection])
 
-  // Memoize totals (only recalculate when bills breakdown changes)
-  const totalMonthlyBills = useMemo(() => {
-    return billsBreakdown.reduce((sum, item) => sum + item.totalMonthlyCost, 0)
-  }, [billsBreakdown])
   
   // Calculate column totals for Bills Breakdown table footer
   const billsBreakdownTotals = useMemo(() => {
@@ -673,11 +702,33 @@ export default function FinancePageClient({
   }, [accountBalances, billsRemaining, daysRemaining])
 
   // Auto-save bill payment statuses to snapshot (debounced)
+  // IMPORTANT: Saves to the currently selected billing period's snapshot, not current month
   const saveBillPaymentStatusesInDb = useCallback(async (currentBillPaymentsPaid: Record<string, number>) => {
     if (!user) return
     
     try {
-      const monthYear = getCurrentMonthYear()
+      // Determine which snapshot to save to based on selected billing period or selected month
+      let monthYear: string | null = null
+      
+      if (selectedBillingPeriodId) {
+        // If a billing period is selected, use its snapshot's month_year
+        const period = billingPeriods.find(p => p.id === selectedBillingPeriodId)
+        if (period?.snapshot_id) {
+          const snapshot = monthlySnapshots.find(s => s.id === period.snapshot_id)
+          if (snapshot) {
+            monthYear = snapshot.month_year
+          }
+        }
+      } else if (selectedMonthYear) {
+        // If a monthly snapshot is selected, use that month_year
+        monthYear = selectedMonthYear
+      }
+      
+      // Fallback to current month if nothing is selected (for backward compatibility)
+      if (!monthYear) {
+        monthYear = getCurrentMonthYear()
+      }
+      
       const billStatuses: Record<string, { paid: boolean; paid_date: string | null; payments_paid: number }> = {}
       for (const bill of bills) {
         const paymentsPaid = currentBillPaymentsPaid[bill.id] || 0
@@ -709,7 +760,7 @@ export default function FinancePageClient({
     } catch (err) {
       console.error('Failed to auto-save bill payment statuses:', err)
     }
-  }, [user, bills, billsBreakdown, accountBalances, projection])
+  }, [user, bills, billsBreakdown, accountBalances, projection, selectedBillingPeriodId, selectedMonthYear, billingPeriods, monthlySnapshots])
 
   // Debounced auto-save for bill payment statuses
   const debouncedSaveBillPaymentStatuses = useDebounce(saveBillPaymentStatusesInDb, 1000)
@@ -758,12 +809,6 @@ export default function FinancePageClient({
     debouncedUpdateBill(billId, updates)
   }, [debouncedUpdateBill])
 
-  // Handle account balance change
-  const handleBalanceChange = useCallback((accountId: string, newBalance: string) => {
-    const numValue = parseFloat(newBalance) || 0
-    optimisticallyUpdateBalance(accountId, numValue)
-    debouncedUpdateBalance(accountId, numValue)
-  }, [optimisticallyUpdateBalance, debouncedUpdateBalance])
 
   // Handle add account
   const handleAddAccount = useCallback(async (name: string, accountType: FinanceAccount['account_type'], balance: number) => {
@@ -867,15 +912,15 @@ export default function FinancePageClient({
   // Create next billing period - saves current period and resets bills to unpaid
   // Open create next period dialog
   const handleCreateNextPeriod = useCallback(() => {
-    // Set default dates (next month)
+    // Set default dates: 15th of next month to 15th of the month after that
     const today = new Date()
-    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1)
-    const endOfNextMonth = new Date(today.getFullYear(), today.getMonth() + 2, 0)
+    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 15)
+    const monthAfterNext = new Date(today.getFullYear(), today.getMonth() + 2, 15)
     
     setNextPeriodForm({
       title: `Period ${nextMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`,
       start_date: nextMonth.toISOString().split('T')[0],
-      end_date: endOfNextMonth.toISOString().split('T')[0],
+      end_date: monthAfterNext.toISOString().split('T')[0],
       reset_bills: true,
     })
     setIsCreateNextPeriodDialogOpen(true)
@@ -913,17 +958,48 @@ export default function FinancePageClient({
       // Wait a moment for the save to complete
       await new Promise(resolve => setTimeout(resolve, 500))
 
-      // Get the most recent snapshot (the one we just saved)
-      const snapshotsRes = await getMonthlySnapshots()
-      const latestSnapshot = snapshotsRes.data?.[0] // Snapshots are ordered by month_year desc
+      // Create a monthly snapshot for the NEW billing period with all bills unpaid
+      // The month_year is based on the period start date
+      const periodStartDate = new Date(nextPeriodForm.start_date)
+      const newPeriodMonthYear = getCurrentMonthYear(periodStartDate)
+      
+      // Get current account balances
+      const currentAccountBalances: Record<string, number> = {}
+      accounts.forEach(account => {
+        currentAccountBalances[account.id] = account.balance
+      })
 
-      // Create the billing period
+      // Create bill_statuses with all bills unpaid (payments_paid: 0)
+      const newPeriodBillStatuses: Record<string, { paid: boolean; paid_date: string | null; payments_paid: number }> = {}
+      bills.forEach(bill => {
+        newPeriodBillStatuses[bill.id] = {
+          paid: false,
+          paid_date: null,
+          payments_paid: 0, // All bills start unpaid
+        }
+      })
+
+      // Create the snapshot for the new period
+      const newPeriodSnapshotRes = await saveMonthlySnapshot({
+        month_year: newPeriodMonthYear,
+        account_balances: currentAccountBalances,
+        bill_statuses: newPeriodBillStatuses,
+        cash_flow_data: null,
+        notes: `Snapshot for billing period: ${nextPeriodForm.title.trim()}`,
+      })
+
+      if (newPeriodSnapshotRes.error) {
+        toast.error(`Failed to create snapshot for new period: ${newPeriodSnapshotRes.error}`)
+        return
+      }
+
+      // Create the billing period linked to the new snapshot
       const periodRes = await createBillingPeriod({
         period_name: nextPeriodForm.title.trim(),
         start_date: nextPeriodForm.start_date,
         end_date: nextPeriodForm.end_date,
-        snapshot_id: latestSnapshot?.id || null,
-        notes: `Created from Current View`,
+        snapshot_id: newPeriodSnapshotRes.data?.id || null,
+        notes: `Created with all bills unpaid`,
       })
 
       if (periodRes.error) {
@@ -931,19 +1007,47 @@ export default function FinancePageClient({
         return
       }
 
-      // Reset to new period if requested:
-      if (nextPeriodForm.reset_bills) {
-        startTransition(() => {
-          setBillPaymentsPaid({}) // All bills unpaid
-        })
-      }
+      // Reset bills to unpaid for the new period
+      startTransition(() => {
+        setBillPaymentsPaid({}) // All bills unpaid
+      })
 
       // Update pay cycle dates to match the new period
       setPayCycleStart(nextPeriodForm.start_date)
       setPayCycleEnd(nextPeriodForm.end_date)
 
-      // Reload data to get the new period
+      // Reload data to get the new period and snapshots
       await loadData()
+      
+      // Set the newly created period as selected
+      if (periodRes.data) {
+        setSelectedBillingPeriodId(periodRes.data.id)
+      }
+
+      // Load the snapshot we just created and restore bill statuses
+      if (newPeriodSnapshotRes.data) {
+        // Restore bill statuses from the new snapshot (all should be unpaid with payments_paid: 0)
+        const paymentsPaid: Record<string, number> = {}
+        for (const [billId, status] of Object.entries(newPeriodSnapshotRes.data.bill_statuses)) {
+          if (typeof status === 'object' && status !== null) {
+            if ('payments_paid' in status && typeof status.payments_paid === 'number') {
+              paymentsPaid[billId] = status.payments_paid
+            } else if ('paid' in status && status.paid === true) {
+              paymentsPaid[billId] = 999
+            }
+          }
+        }
+        setBillPaymentsPaid(paymentsPaid)
+
+        // Restore account balances from the snapshot
+        for (const [accountId, balance] of Object.entries(newPeriodSnapshotRes.data.account_balances)) {
+          const account = accounts.find(a => a.id === accountId)
+          if (account) {
+            optimisticallyUpdateBalance(accountId, balance)
+            debouncedUpdateBalance(accountId, balance)
+          }
+        }
+      }
 
       // Load projections for the new period's date range
       const allProjectionsRes = await getAllProjections()
@@ -1009,11 +1113,13 @@ export default function FinancePageClient({
     } finally {
       setIsCreatingNextPeriod(false)
     }
-  }, [user, isCreatingNextPeriod, nextPeriodForm, handleSaveSnapshot, loadData])
+  }, [user, isCreatingNextPeriod, nextPeriodForm, handleSaveSnapshot, loadData, accounts, bills, optimisticallyUpdateBalance, debouncedUpdateBalance])
 
   // Load monthly snapshot
   const handleLoadSnapshot = useCallback(async (monthYear: string) => {
-    if (!user) return
+    if (!user) {
+      return
+    }
     
     const res = await loadMonthlySnapshot(monthYear)
     if (res.error || !res.data) {
@@ -1041,7 +1147,9 @@ export default function FinancePageClient({
         }
       }
     }
-    setBillPaymentsPaid(paymentsPaid)
+    
+    // Use a function form of setState to ensure we're setting the latest value
+    setBillPaymentsPaid(() => paymentsPaid)
     
     toast.success('Snapshot loaded', {
       description: `Restored ${monthYear} snapshot`
@@ -1050,19 +1158,62 @@ export default function FinancePageClient({
 
   // Load billing period (loads its associated snapshot and updates pay cycle dates)
   const handleLoadBillingPeriod = useCallback(async (periodId: string) => {
-    if (!user) return
-    
-    const period = billingPeriods.find(p => p.id === periodId)
-    if (!period) {
-      toast.error('Period not found')
+    if (!user) {
       return
     }
 
     setIsLoading(true)
     try {
+      // CRITICAL: Fetch the period directly from the database to ensure we have the latest data
+      // This prevents issues with stale state data that might have incorrect dates
+      const periodRes = await getBillingPeriod(periodId)
+      if (periodRes.error || !periodRes.data) {
+        toast.error('Period not found', { description: periodRes.error || 'Failed to load period' })
+        return
+      }
+      
+      const period = periodRes.data
+
+      // IMPORTANT: Save current state to current period's snapshot before switching
+      // This ensures changes are persisted to the correct period
+      if (selectedBillingPeriodId && selectedBillingPeriodId !== periodId) {
+        const currentPeriod = billingPeriods.find(p => p.id === selectedBillingPeriodId)
+        if (currentPeriod?.snapshot_id) {
+          const currentSnapshot = monthlySnapshots.find(s => s.id === currentPeriod.snapshot_id)
+          if (currentSnapshot) {
+            // Save current bill payment statuses to current period's snapshot
+            const billStatuses: Record<string, { paid: boolean; paid_date: string | null; payments_paid: number }> = {}
+            for (const bill of bills) {
+              const paymentsPaid = billPaymentsPaid[bill.id] || 0
+              const isFullyPaid = paymentsPaid > 0 && paymentsPaid === billsBreakdown.find(b => b.bill.id === bill.id)?.totalPayments
+              billStatuses[bill.id] = {
+                paid: isFullyPaid,
+                paid_date: isFullyPaid ? new Date().toISOString().split('T')[0] : null,
+                payments_paid: paymentsPaid,
+              }
+            }
+            
+            await saveMonthlySnapshot({
+              month_year: currentSnapshot.month_year,
+              account_balances: accountBalances,
+              bill_statuses: billStatuses,
+              cash_flow_data: projection as unknown as Record<string, unknown>,
+            })
+          }
+        }
+      }
+
       // Update pay cycle dates to match the period
-      setPayCycleStart(period.start_date)
-      setPayCycleEnd(period.end_date)
+      // CRITICAL: Set dates immediately and ensure they match the period's dates exactly
+      // These dates come directly from the database and should be in YYYY-MM-DD format
+      // Ensure dates are in the correct format (YYYY-MM-DD) for HTML date inputs
+      const periodStartDate = period.start_date.split('T')[0] // Extract date part if timestamp
+      const periodEndDate = period.end_date.split('T')[0] // Extract date part if timestamp
+      
+      // Set dates synchronously - these MUST match the period's dates from the database
+      // The dates are stored in ISO format (YYYY-MM-DD) which is what the date input expects
+      setPayCycleStart(periodStartDate)
+      setPayCycleEnd(periodEndDate)
 
       // Load all projections and filter by period date range
       const allProjectionsRes = await getAllProjections()
@@ -1153,11 +1304,19 @@ export default function FinancePageClient({
         setBillPaymentsPaid({})
       }
       
+      // Refresh billing periods list to ensure state is up-to-date
+      const periodsRes = await getBillingPeriods()
+      if (periodsRes.data) {
+        setBillingPeriods(periodsRes.data)
+      }
+      
+      // Set selected period ID - this must happen AFTER dates are set
+      // This will trigger the useEffect that syncs dates, but dates are already set correctly above
       setSelectedBillingPeriodId(periodId)
       setSelectedMonthYear(getCurrentMonthYear()) // Reset to current month for display
       
       toast.success('Period loaded', {
-        description: `Switched to ${period.period_name}`
+        description: `${period.period_name}`
       })
     } catch (error) {
       console.error('Error loading billing period:', error)
@@ -1165,18 +1324,45 @@ export default function FinancePageClient({
     } finally {
       setIsLoading(false)
     }
-  }, [user, billingPeriods, monthlySnapshots, accounts, optimisticallyUpdateBalance, debouncedUpdateBalance])
+  }, [user, billingPeriods, monthlySnapshots, accounts, optimisticallyUpdateBalance, debouncedUpdateBalance, selectedBillingPeriodId, billPaymentsPaid, bills, billsBreakdown, accountBalances, projection])
 
   // Add new projection row
   const handleAddProjectionRow = useCallback(() => {
     if (!user) return
     
+    // CRITICAL: Use a date within the current period's range, not the actual "today"
+    // This ensures projections created in a period (e.g., 2030) appear only in that period
+    const periodStartDate = new Date(payCycleStart)
+    periodStartDate.setHours(0, 0, 0, 0)
+    const periodEndDate = new Date(payCycleEnd)
+    periodEndDate.setHours(0, 0, 0, 0)
     const todayDate = new Date(today)
     todayDate.setHours(0, 0, 0, 0)
+    
+    // Use today if it falls within the period range, otherwise use period start
+    // This allows creating projections for "today" when viewing current period,
+    // but uses period start when viewing future/past periods
+    let projectionDate: string
+    if (todayDate >= periodStartDate && todayDate <= periodEndDate) {
+      projectionDate = today
+    } else {
+      projectionDate = payCycleStart
+    }
+    
+    const projectionDateObj = new Date(projectionDate)
+    projectionDateObj.setHours(0, 0, 0, 0)
     const endDate = new Date(payCycleEnd)
     endDate.setHours(0, 0, 0, 0)
-    const diffTime = endDate.getTime() - todayDate.getTime()
+    const diffTime = endDate.getTime() - projectionDateObj.getTime()
     const daysRem = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+    
+    // Validate that the projection date falls within the period range
+    if (projectionDateObj < periodStartDate || projectionDateObj > periodEndDate) {
+      toast.error('Cannot create projection', {
+        description: `Projection date must be within the current period range (${payCycleStart} to ${payCycleEnd})`
+      })
+      return
+    }
     
     const accountBalances: Record<string, number> = {}
     // Initialize account balances to 0
@@ -1187,12 +1373,12 @@ export default function FinancePageClient({
     // Calculate current bills remaining from bills breakdown (sum of all "Remaining This month")
     const currentBillsRemaining = billsBreakdown.reduce((sum, item) => sum + item.remainingThisMonth, 0)
     
-    // Generate unique time for this entry (current time, or increment if multiple entries today)
+    // Generate unique time for this entry (current time, or increment if multiple entries on this date)
     const now = new Date()
-    const existingToday = projections.filter(p => p.projection_date === today && p.days_remaining === Math.max(0, daysRem))
+    const existingOnDate = projections.filter(p => p.projection_date === projectionDate && p.days_remaining === Math.max(0, daysRem))
     // Find the highest seconds value used for this date/days combination to ensure uniqueness
     let maxSeconds = now.getSeconds()
-    existingToday.forEach(p => {
+    existingOnDate.forEach(p => {
       if (p.entry_time) {
         const parts = p.entry_time.split(':')
         if (parts.length >= 3) {
@@ -1209,6 +1395,14 @@ export default function FinancePageClient({
     const finalHours = (now.getHours() + hoursCarry) % 24
     const timeString = `${finalHours.toString().padStart(2, '0')}:${finalMinutes.toString().padStart(2, '0')}:${uniqueSeconds.toString().padStart(2, '0')}`
     
+    console.log('[SpendTracking] Creating projection:', {
+      projectionDate,
+      periodRange: `${payCycleStart} to ${payCycleEnd}`,
+      daysRemaining: Math.max(0, daysRem),
+      selectedBillingPeriodId,
+      selectedMonthYear
+    })
+    
     const newProjection: Partial<FinanceProjection> & {
       projection_date: string
       days_remaining: number
@@ -1217,7 +1411,7 @@ export default function FinancePageClient({
       bills_remaining: number
       cash_available: number
     } = {
-      projection_date: today,
+      projection_date: projectionDate, // Use period-appropriate date, not always "today"
       days_remaining: Math.max(0, daysRem),
       entry_time: timeString, // Set to current time for uniqueness
       account_balances: accountBalances,
@@ -1232,7 +1426,7 @@ export default function FinancePageClient({
     startTransition(async () => {
       // With entry_time, we can have multiple rows per day, so check if exact same time exists
       const existingProjection = projections.find(p => 
-        p.projection_date === today && 
+        p.projection_date === projectionDate && 
         p.days_remaining === Math.max(0, daysRem) &&
         p.entry_time === timeString
       )
@@ -1315,12 +1509,28 @@ export default function FinancePageClient({
           })
         }
         
+        // After adding/updating, filter projections to ensure only those in current period are shown
+        // This prevents projections from "leaking" between periods
+        const currentPeriodStart = new Date(payCycleStart)
+        currentPeriodStart.setHours(0, 0, 0, 0)
+        const currentPeriodEnd = new Date(payCycleEnd)
+        currentPeriodEnd.setHours(23, 59, 59, 999)
+        
+        setProjections(prev => {
+          // Filter to only include projections within the current period's date range
+          return prev.filter(p => {
+            const projDate = new Date(p.projection_date)
+            projDate.setHours(0, 0, 0, 0)
+            return projDate >= currentPeriodStart && projDate <= currentPeriodEnd
+          })
+        })
+        
         toast.success(isUpdate ? 'Row updated' : 'Row added')
       } else {
         toast.error('Failed to add row', { description: res.error || 'Unknown error' })
       }
     })
-  }, [user, accounts, today, payCycleEnd, projections, billsBreakdown, allHistoricalProjections.length])
+  }, [user, accounts, today, payCycleStart, payCycleEnd, projections, billsBreakdown, allHistoricalProjections.length, selectedBillingPeriodId, selectedMonthYear])
 
   // Update projection
   const updateProjectionInDb = useCallback(async (projectionId: string, updates: Partial<FinanceProjection>) => {
@@ -1363,7 +1573,7 @@ export default function FinancePageClient({
         })
       }
     }
-  }, [projections, selectedMonthYear, allHistoricalProjections.length])
+  }, [projections, allHistoricalProjections.length])
 
   // Debounced projection update
   const debouncedUpdateProjection = useDebounce(updateProjectionInDb, 500)
@@ -1403,9 +1613,23 @@ export default function FinancePageClient({
     }
   }, [user, allHistoricalProjections.length])
 
+
+
+  // Show loading state while auth is being checked
+  if (isAuthLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-dvh">
+        <div className="text-center">
+          <p className="glass-text-secondary text-sm">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Only show "Please sign in" if auth has finished loading and user is null
   if (!user) {
     return (
-      <div className="flex items-center justify-center min-h-[100dvh]">
+      <div className="flex items-center justify-center min-h-dvh">
         <div className="text-center">
           <p className="glass-text-secondary text-sm">Please sign in to access your finances</p>
         </div>
@@ -1415,7 +1639,7 @@ export default function FinancePageClient({
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[100dvh]">
+      <div className="flex items-center justify-center min-h-dvh">
         <div className="text-center">
           <p className="glass-text-secondary text-sm">Loading...</p>
         </div>
@@ -1424,10 +1648,10 @@ export default function FinancePageClient({
   }
 
   return (
-    <div className="ml-0 md:ml-[var(--outer-rail-width,64px)] px-2 sm:px-4 md:px-8 py-4 md:py-6 min-h-[100dvh] flex flex-col overflow-x-hidden">
+    <div className="ml-0 md:ml-[var(--outer-rail-width,64px)] px-2 sm:px-4 md:px-8 py-4 md:py-6 min-h-dvh flex flex-col overflow-x-hidden">
       <div className="max-w-[1600px] mx-auto w-full flex flex-col flex-1 min-h-0">
         {/* Personal Finance Header */}
-        <div className="mb-2 flex-shrink-0">
+        <div className="mb-2 shrink-0">
           <h1 className="glass-text-primary text-lg font-semibold">
             Personal Finance - {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
           </h1>
@@ -1437,7 +1661,7 @@ export default function FinancePageClient({
         <TabsGlass value={activeTab} onValueChange={setActiveTab} className="w-full flex flex-col flex-1 min-h-0">
           {/* Tabs Header - Positioned at top with minimal padding (compact design) */}
           <div 
-            className="glass-medium glass-legible p-1 mb-2 relative overflow-hidden flex-shrink-0"
+            className="glass-medium glass-legible p-1 mb-2 relative overflow-hidden shrink-0"
             style={{ borderRadius: '9999px' }}
           >
             <div 
@@ -1445,12 +1669,12 @@ export default function FinancePageClient({
               style={{ borderRadius: '9999px' }}
             />
             
-            <div className="relative z-10 flex items-center justify-center gap-2 w-full">
-              <TabsListGlass>
-                <TabsTriggerGlass value="current">Current View</TabsTriggerGlass>
-                <TabsTriggerGlass value="historical">Historical Spend Tracking</TabsTriggerGlass>
-                <TabsTriggerGlass value="charts">Chart Analysis</TabsTriggerGlass>
-                <TabsTriggerGlass value="periods">Billing Periods</TabsTriggerGlass>
+            <div className="relative z-10 flex items-center justify-center gap-1 sm:gap-2 w-full overflow-x-auto">
+              <TabsListGlass className="flex-nowrap">
+                <TabsTriggerGlass value="current" className="text-[10px] sm:text-xs px-2 sm:px-4 py-1.5 sm:py-2 whitespace-nowrap">Current View</TabsTriggerGlass>
+                <TabsTriggerGlass value="historical" className="text-[10px] sm:text-xs px-2 sm:px-4 py-1.5 sm:py-2 whitespace-nowrap">Historical</TabsTriggerGlass>
+                <TabsTriggerGlass value="charts" className="text-[10px] sm:text-xs px-2 sm:px-4 py-1.5 sm:py-2 whitespace-nowrap">Charts</TabsTriggerGlass>
+                <TabsTriggerGlass value="periods" className="text-[10px] sm:text-xs px-2 sm:px-4 py-1.5 sm:py-2 whitespace-nowrap">Periods</TabsTriggerGlass>
               </TabsListGlass>
             </div>
           </div>
@@ -1460,80 +1684,80 @@ export default function FinancePageClient({
             {/* Current View Tab */}
             <TabsContentGlass value="current" className="h-full">
 
-        {/* Pay Cycle Header - Compact single row */}
+        {/* Pay Cycle Header - Responsive layout */}
         <Card className="glass-large mb-2">
-          <CardContent className="py-1">
-            <div className="flex flex-wrap items-end gap-x-1.5 gap-y-0.5">
-              <div className="flex items-center gap-0.5">
+          <CardContent className="py-2 sm:py-1">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-end gap-2 sm:gap-x-1.5 sm:gap-y-0.5">
+              <div className="flex items-center gap-1 sm:gap-0.5 w-full sm:w-auto">
                 <Label htmlFor="today-date" className="glass-text-secondary text-xs whitespace-nowrap">Today&apos;s Date:</Label>
                 <Input
                   id="today-date"
                   type="date"
                   value={today}
                   readOnly
-                  className="w-32 glass-small h-5 text-xs py-0"
+                  className="flex-1 sm:w-32 glass-small h-8 sm:h-5 text-xs py-0"
                 />
               </div>
               
-              <div className="flex items-center gap-0.5">
+              <div className="flex items-center gap-1 sm:gap-0.5 w-full sm:w-auto">
                 <Label htmlFor="pay-start" className="glass-text-secondary text-xs whitespace-nowrap">Pay Cycle Start:</Label>
                 <Input
                   id="pay-start"
                   type="date"
                   value={payCycleStart}
                   onChange={(e) => setPayCycleStart(e.target.value)}
-                  className="w-32 glass-small h-5 text-xs py-0"
+                  className="flex-1 sm:w-32 glass-small h-8 sm:h-5 text-xs py-0"
                 />
               </div>
               
-              <div className="flex items-center gap-0.5">
+              <div className="flex items-center gap-1 sm:gap-0.5 w-full sm:w-auto">
                 <Label htmlFor="pay-end" className="glass-text-secondary text-xs whitespace-nowrap">Pay Cycle End:</Label>
                 <Input
                   id="pay-end"
                   type="date"
                   value={payCycleEnd}
                   onChange={(e) => setPayCycleEnd(e.target.value)}
-                  className="w-32 glass-small h-5 text-xs py-0"
+                  className="flex-1 sm:w-32 glass-small h-8 sm:h-5 text-xs py-0"
                 />
               </div>
               
-              <div className="glass-small px-1.5 py-0 h-5 rounded flex items-center">
+              <div className="glass-small px-2 sm:px-1.5 py-1 sm:py-0 h-8 sm:h-5 rounded flex items-center">
                 <span className="glass-text-secondary text-xs whitespace-nowrap">Days this cycle:</span>
-                <span className="glass-text-primary text-xs font-semibold ml-0.5">{payCycleDays}</span>
+                <span className="glass-text-primary text-xs font-semibold ml-1 sm:ml-0.5">{payCycleDays}</span>
               </div>
               
-              <div className="glass-small px-1.5 py-0 h-5 rounded flex items-center">
+              <div className="glass-small px-2 sm:px-1.5 py-1 sm:py-0 h-8 sm:h-5 rounded flex items-center">
                 <span className="glass-text-secondary text-xs whitespace-nowrap">Days remaining:</span>
-                <span className="glass-text-primary text-xs font-semibold ml-0.5">{daysRemaining}</span>
+                <span className="glass-text-primary text-xs font-semibold ml-1 sm:ml-0.5">{daysRemaining}</span>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Account Balance Requirements + Date in single row */}
+        {/* Account Balance Requirements + Date in responsive row */}
         <Card className="glass-large mb-2">
-          <CardContent className="py-1">
-            <div className="flex flex-wrap items-end justify-between gap-x-1.5 gap-y-0.5">
-              <div className="flex items-center gap-1.5">
+          <CardContent className="py-2 sm:py-1">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end sm:justify-between gap-2 sm:gap-x-1.5 sm:gap-y-0.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="glass-text-secondary text-xs font-medium">Account Balance Requirements:</span>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="glass-small text-xs h-6"
+                  className="glass-small text-xs h-8 sm:h-6"
                   onClick={() => setIsAddAccountDialogOpen(true)}
                 >
                   + Add Account
                 </Button>
               </div>
               
-              <div className="flex flex-wrap gap-x-1.5 gap-y-0.5 items-center">
+              <div className="flex flex-wrap gap-2 sm:gap-x-1.5 sm:gap-y-0.5 items-center">
                 {accounts.map(account => {
                   const required = accountRequirements[account.id] || 0
                   // Only show accounts with requirements > 0
                   if (required <= 0) return null
                   return (
-                    <div key={account.id} className="flex items-center gap-0.5">
-                      <span className="glass-text-primary text-xs truncate max-w-[70px]">{account.name}:</span>
+                    <div key={account.id} className="flex items-center gap-1 sm:gap-0.5">
+                      <span className="glass-text-primary text-xs truncate max-w-[100px] sm:max-w-[70px]">{account.name}:</span>
                       <span className="glass-text-primary text-xs font-semibold whitespace-nowrap text-red-500">
                         {formatCurrency(required)}
                       </span>
@@ -1548,30 +1772,30 @@ export default function FinancePageClient({
           </CardContent>
         </Card>
 
-        {/* Cash Flow Summary - Single row, compact */}
+        {/* Cash Flow Summary - Responsive layout */}
         <Card className="glass-large mb-2">
-          <CardContent className="py-1">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
-              <div className="flex items-center gap-0.5">
+          <CardContent className="py-2 sm:py-1">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-x-3 sm:gap-y-0.5">
+              <div className="flex items-center gap-1 sm:gap-0.5">
                 <span className="glass-text-secondary text-xs">Total Available:</span>
                 <span className="glass-text-primary text-xs font-semibold">{formatCurrency(projection.totalAvailable)}</span>
               </div>
-              <div className="flex items-center gap-0.5">
+              <div className="flex items-center gap-1 sm:gap-0.5">
                 <span className="glass-text-secondary text-xs">Bills Remaining:</span>
                 <span className="glass-text-primary text-xs font-semibold">{formatCurrency(projection.billsRemaining)}</span>
               </div>
-              <div className="flex items-center gap-0.5">
+              <div className="flex items-center gap-1 sm:gap-0.5">
                 <span className="glass-text-secondary text-xs">Cash Available:</span>
                 <span className="glass-text-primary text-xs font-semibold">{formatCurrency(projection.cashAvailable)}</span>
               </div>
               {projection.cashPerWeek !== null && (
-                <div className="flex items-center gap-0.5">
+                <div className="flex items-center gap-1 sm:gap-0.5">
                   <span className="glass-text-secondary text-xs">Cash per Week:</span>
                   <span className="glass-text-primary text-xs font-semibold">{formatCurrency(projection.cashPerWeek)}</span>
                 </div>
               )}
               {projection.spendingPerDay !== null && (
-                <div className="flex items-center gap-0.5">
+                <div className="flex items-center gap-1 sm:gap-0.5">
                   <span className="glass-text-secondary text-xs">Spending per Day:</span>
                   <span className="glass-text-primary text-xs font-semibold">{formatCurrency(projection.spendingPerDay)}</span>
                 </div>
@@ -1582,12 +1806,12 @@ export default function FinancePageClient({
 
         {/* Bills Breakdown Section */}
         <Card className="glass-large mb-2">
-          <CardHeader className="py-1 flex flex-row items-center justify-between">
+          <CardHeader className="py-2 sm:py-1 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
             <CardTitle className="glass-text-primary text-xs font-semibold">Bills Breakdown</CardTitle>
             <Button
               variant="outline"
               size="sm"
-              className="glass-small text-xs h-6"
+              className="glass-small text-xs h-8 sm:h-6 w-full sm:w-auto"
               onClick={() => {
                 setEditingBill(null)
                 setIsAddBillDialogOpen(true)
@@ -1597,8 +1821,9 @@ export default function FinancePageClient({
             </Button>
           </CardHeader>
           <CardContent className="py-1">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
+            <div className="overflow-x-auto -mx-1 sm:mx-0">
+              <div className="min-w-full inline-block">
+                <table className="w-full text-xs min-w-[1000px]">
                 <thead>
                   <tr className="border-b border-white/10">
                     <th 
@@ -1737,26 +1962,28 @@ export default function FinancePageClient({
                   </tr>
                 </tfoot>
               </table>
+              </div>
             </div>
           </CardContent>
         </Card>
 
         {/* Spend Tracking Section */}
         <Card className="glass-large mb-2">
-          <CardHeader className="py-1 flex flex-row items-center justify-between">
+          <CardHeader className="py-2 sm:py-1 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
             <CardTitle className="glass-text-primary text-xs font-semibold">Spend Tracking</CardTitle>
             <Button
               variant="outline"
               size="sm"
-              className="glass-small text-xs h-6"
+              className="glass-small text-xs h-8 sm:h-6 w-full sm:w-auto"
               onClick={handleAddProjectionRow}
             >
               + Add Row
             </Button>
           </CardHeader>
           <CardContent className="py-1">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
+            <div className="overflow-x-auto -mx-1 sm:mx-0">
+              <div className="min-w-full inline-block">
+                <table className="w-full text-xs min-w-[600px]">
                 <thead>
                   <tr className="border-b border-white/10">
                     {spendTrackingColumnOrder.map(columnId => {
@@ -1977,8 +2204,6 @@ export default function FinancePageClient({
                       key={`${projection.id}-${projection.projection_date}-${projection.days_remaining}-${projection.entry_time || '00:00:00'}-${index}`}
                       projection={projection}
                       accounts={accounts}
-                      billsRemaining={billsRemaining}
-                      payCycleEnd={payCycleEnd}
                       columnOrder={spendTrackingColumnOrder}
                       rowIndex={index}
                       allProjections={projections}
@@ -1988,6 +2213,7 @@ export default function FinancePageClient({
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -2014,16 +2240,106 @@ export default function FinancePageClient({
           </Button>
           <Select
             value={selectedBillingPeriodId || selectedMonthYear}
-            onValueChange={(value) => {
+            onValueChange={async (value) => {
               // Check if it's a billing period ID or a month_year
               const period = billingPeriods.find(p => p.id === value)
               if (period) {
-                handleLoadBillingPeriod(value)
+                await handleLoadBillingPeriod(value)
               } else {
-                // It's a month_year (snapshot)
-                setSelectedBillingPeriodId(null)
-                setSelectedMonthYear(value)
-                loadData()
+                // It's a month_year (snapshot) - need to set pay cycle dates for this month and load snapshot
+                
+                // Parse monthYear (format: "YYYY-MM") and calculate pay cycle dates
+                const [year, month] = value.split('-').map(Number)
+                const monthIndex = month - 1 // JavaScript months are 0-indexed
+                
+                // Calculate pay cycle: 14th of this month to 12th of next month
+                const startDate = new Date(year, monthIndex, 14)
+                const endDate = new Date(year, monthIndex + 1, 12)
+                
+                const startDateStr = startDate.toISOString().split('T')[0]
+                const endDateStr = endDate.toISOString().split('T')[0]
+                
+                // CRITICAL: Load snapshot FIRST, then set dates
+                // This ensures payment statuses are restored BEFORE dates trigger breakdown recalculation
+                setIsLoading(true)
+                
+                try {
+                  // Load snapshot to restore payment statuses and account balances FIRST
+                  await handleLoadSnapshot(value)
+                  
+                  // NOW set the dates - this will trigger breakdown recalculation with the restored payment statuses
+                  setPayCycleStart(startDateStr)
+                  setPayCycleEnd(endDateStr)
+                  setSelectedBillingPeriodId(null)
+                  setSelectedMonthYear(value)
+                } finally {
+                  setIsLoading(false)
+                }
+                
+                // Reload projections filtered by pay cycle date range (not just month)
+                // This ensures the Spend Tracking table shows projections for the correct period
+                console.log('[SpendTracking] Reloading projections for date range:', {
+                  monthYear: value,
+                  startDateStr,
+                  endDateStr
+                })
+                const allProjectionsRes = await getAllProjections()
+                if (allProjectionsRes.data) {
+                  // Filter projections that fall within the pay cycle date range
+                  const cycleStart = new Date(startDateStr)
+                  const cycleEnd = new Date(endDateStr)
+                  cycleStart.setHours(0, 0, 0, 0)
+                  cycleEnd.setHours(23, 59, 59, 999)
+                  
+                  const filteredProjections = allProjectionsRes.data
+                    .filter(p => {
+                      const projDate = new Date(p.projection_date)
+                      projDate.setHours(0, 0, 0, 0)
+                      return projDate >= cycleStart && projDate <= cycleEnd
+                    })
+                    .map(p => ({
+                      ...p,
+                      entry_time: p.entry_time || '00:00:00'
+                    }))
+                    // Deduplicate
+                    .reduce((acc, current) => {
+                      const key = `${current.projection_date}-${current.days_remaining}-${current.entry_time}`
+                      const existing = acc.find(p => `${p.projection_date}-${p.days_remaining}-${p.entry_time}` === key)
+                      if (existing) {
+                        const existingDate = new Date(existing.updated_at || existing.created_at)
+                        const currentDate = new Date(current.updated_at || current.created_at)
+                        if (currentDate > existingDate || (currentDate.getTime() === existingDate.getTime() && current.id > existing.id)) {
+                          const index = acc.indexOf(existing)
+                          acc[index] = current
+                        }
+                      } else {
+                        acc.push(current)
+                      }
+                      return acc
+                    }, [] as FinanceProjection[])
+                    // Sort by date descending, then days remaining ascending, then time descending
+                    .sort((a, b) => {
+                      const dateDiff = new Date(b.projection_date).getTime() - new Date(a.projection_date).getTime()
+                      if (dateDiff !== 0) return dateDiff
+                      if (a.days_remaining !== b.days_remaining) return a.days_remaining - b.days_remaining
+                      const timeA = a.entry_time || '00:00:00'
+                      const timeB = b.entry_time || '00:00:00'
+                      return timeB.localeCompare(timeA)
+                    })
+                  
+                  console.log('[SpendTracking] Filtered projections:', {
+                    totalProjections: allProjectionsRes.data.length,
+                    filteredCount: filteredProjections.length,
+                    dateRange: `${startDateStr} to ${endDateStr}`
+                  })
+                  setProjections(filteredProjections)
+                }
+                
+                // Reload billing periods list (but don't reset payment statuses)
+                const periodsRes = await getBillingPeriods()
+                if (periodsRes.data) {
+                  setBillingPeriods(periodsRes.data)
+                }
               }
             }}
           >
@@ -2066,6 +2382,8 @@ export default function FinancePageClient({
             <TabsContentGlass value="charts" className="h-full">
               <ChartAnalysisTab 
                 initialProjections={allHistoricalProjections}
+                initialAccounts={accounts}
+                initialBills={bills}
               />
             </TabsContentGlass>
 
@@ -2695,17 +3013,26 @@ const BillRow = memo(({
   const [tempMultiplierType, setTempMultiplierType] = useState<'monthly' | 'weekly' | 'one_off'>(bill.multiplier_type || 'monthly')
   const [tempPaymentDay, setTempPaymentDay] = useState<string>((bill.payment_day ?? '').toString())
 
-  // Sync local state when bill changes
+  // Sync local state when bill changes - use ref to track previous bill to avoid unnecessary updates
+  const prevBillRef = useRef(bill.id)
+  
   useEffect(() => {
-    setTempCompanyName(bill.company_name)
-    setTempAmount(bill.amount.toString())
-    setTempTypicalAmount(bill.typical_amount?.toString() || '')
-    setTempChargeCycle(bill.charge_cycle)
-    setTempNextDueDate(bill.next_due_date)
-    setTempBillingAccountId(bill.billing_account_id ?? '')
-    setTempCategory(bill.category ?? '')
-    setTempMultiplierType(bill.multiplier_type || 'monthly')
-    setTempPaymentDay((bill.payment_day ?? '').toString())
+    // Only update if bill ID changed (new bill selected)
+    if (prevBillRef.current !== bill.id) {
+      prevBillRef.current = bill.id
+      // Batch state updates using React.startTransition to avoid cascading renders
+      React.startTransition(() => {
+        setTempCompanyName(bill.company_name)
+        setTempAmount(bill.amount.toString())
+        setTempTypicalAmount(bill.typical_amount?.toString() || '')
+        setTempChargeCycle(bill.charge_cycle)
+        setTempNextDueDate(bill.next_due_date)
+        setTempBillingAccountId(bill.billing_account_id ?? '')
+        setTempCategory(bill.category ?? '')
+        setTempMultiplierType(bill.multiplier_type || 'monthly')
+        setTempPaymentDay((bill.payment_day ?? '').toString())
+      })
+    }
   }, [bill])
 
   // Format next due date for display
@@ -3211,8 +3538,6 @@ BillRow.displayName = 'BillRow'
 const ProjectionRow = memo(({
   projection,
   accounts,
-  billsRemaining,
-  payCycleEnd,
   columnOrder,
   rowIndex,
   allProjections,
@@ -3221,8 +3546,6 @@ const ProjectionRow = memo(({
 }: {
   projection: FinanceProjection
   accounts: FinanceAccount[]
-  billsRemaining: number
-  payCycleEnd: string
   columnOrder: string[]
   rowIndex: number
   allProjections: FinanceProjection[]

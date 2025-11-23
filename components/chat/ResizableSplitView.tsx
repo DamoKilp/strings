@@ -210,7 +210,7 @@ export function ResizableSplitView({
     <div
       ref={containerRef}
       className={cn(
-        "flex h-full w-full overflow-hidden", // Use flexbox, ensure full height/width and contain overflow
+        "flex flex-col lg:flex-row h-full w-full overflow-hidden", // Stack vertically on mobile, horizontal on desktop
         isResizing ? "cursor-col-resize" : "", // Optional: change cursor for the whole area during resize
         className // Allow parent to pass additional classes
       )}
@@ -220,13 +220,21 @@ export function ResizableSplitView({
           className={cn(
               "flex flex-col h-full",
               shouldShowPanel ? "flex-shrink-0" : "flex-1",
-              // only animate width when no drag in progress
+              // On mobile, always full width when panel is shown (stacked layout)
+              shouldShowPanel ? "w-full lg:w-auto" : "w-full",
+              // only animate width when no drag in progress and on desktop
               !isResizing && "transition-[width] duration-300 ease-in-out"
           )}
         style={{
-          width: shouldShowPanel ? `${100 - panelSize}%` : "100%",
-          // Define minWidth to prevent collapsing too much during resize
-          minWidth: shouldShowPanel ? "200px" : "100%", // Adjust minWidth as needed
+          width: shouldShowPanel 
+            ? (typeof window !== 'undefined' && window.innerWidth >= 1024 
+                ? `${100 - panelSize}%` 
+                : '100%')
+            : "100%",
+          // Define minWidth to prevent collapsing too much during resize (desktop only)
+          minWidth: shouldShowPanel && typeof window !== 'undefined' && window.innerWidth >= 1024 
+            ? "200px" 
+            : "100%",
         }}
       >
         {/* Message area: let the child own scrolling to avoid nested scroll containers */}
@@ -241,9 +249,9 @@ export function ResizableSplitView({
       <AnimatePresence>
         {shouldShowPanel && (
           <>
-            {/* Resize Handle */}
+            {/* Resize Handle - Hidden on mobile */}
             <div
-              className="flex-shrink-0 w-1.5 h-full cursor-col-resize bg-border hover:bg-primary/50 active:bg-primary transition-colors duration-150 z-10"
+              className="hidden lg:block flex-shrink-0 w-1.5 h-full cursor-col-resize bg-border hover:bg-primary/50 active:bg-primary transition-colors duration-150 z-10"
               onMouseDown={startResize}
               onTouchStart={startResize}
               title="Resize panels" // Accessibility
@@ -254,13 +262,21 @@ export function ResizableSplitView({
             <div
               ref={codePanelRef}
               className={cn(
-                "flex flex-col h-full flex-shrink-0 bg-background dark:bg-neutral-900 border-l border-border dark:border-neutral-800",
+                "flex flex-col h-full flex-shrink-0 bg-background dark:bg-neutral-900",
+                "border-t lg:border-t-0 lg:border-l border-border dark:border-neutral-800",
                 !isResizing && "transition-[width] duration-300 ease-in-out" // Ensure width transition is applied
               )}
               style={{
-                width: `${panelSize}%`,
-                // Define maxWidth to prevent panel taking too much space
-                maxWidth: "80%", // Adjust as needed
+                width: typeof window !== 'undefined' && window.innerWidth >= 1024 
+                  ? `${panelSize}%` 
+                  : '100%',
+                height: typeof window !== 'undefined' && window.innerWidth < 1024 
+                  ? '50%' 
+                  : '100%',
+                // Define maxWidth to prevent panel taking too much space (desktop only)
+                maxWidth: typeof window !== 'undefined' && window.innerWidth >= 1024 
+                  ? "80%" 
+                  : "100%",
               }}
             >
               {/* Code Panel Header */}

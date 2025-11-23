@@ -13,7 +13,10 @@ import {
 import FinancePageClient from './FinancePageClient'
 import { getCurrentMonthYear } from '@/lib/financeUtils'
 
-export const revalidate = 0
+// 🚀 FIXED: Changed from revalidate = 0 to prevent automatic revalidation on focus
+// This prevents the page from refreshing when switching between applications
+// The page will still be dynamic but won't revalidate on every focus change
+export const revalidate = 60 // Revalidate every 60 seconds instead of on every request
 
 interface FinancePageProps {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>
@@ -24,9 +27,26 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
   const supabase = await createClient()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   
+  // Debug logging for server-side auth
+  console.log('🔍 [FinancePage Server] Auth check:', {
+    hasUser: !!user,
+    userId: user?.id,
+    userEmail: user?.email,
+    hasError: !!authError,
+    errorMessage: authError?.message,
+    errorCode: authError?.status,
+    timestamp: new Date().toISOString()
+  })
+  
   if (authError || !user) {
+    console.log('🔍 [FinancePage Server] Redirecting to sign-in:', {
+      reason: authError ? 'authError' : 'noUser',
+      error: authError?.message
+    })
     redirect('/sign-in?redirect_to=/finance')
   }
+  
+  console.log('🔍 [FinancePage Server] User authenticated, proceeding with data load')
 
   // Resolve searchParams for Next.js 15 compatibility
   const params = await searchParams

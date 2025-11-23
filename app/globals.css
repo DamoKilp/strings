@@ -340,7 +340,15 @@ body {
 .chat-page-container {
   @apply h-[100dvh] w-full overflow-hidden;
   /* Ensure chat content respects the fixed outer rail width */
+  /* On mobile (< 768px), outer rail is hidden, so no margin needed */
   margin-left: var(--outer-rail-width, 64px);
+}
+
+/* Mobile: Remove margin for outer rail since it's hidden */
+@media (max-width: 767px) {
+  .chat-page-container {
+    margin-left: 0;
+  }
 }
 
 .chat-input-container {
@@ -356,12 +364,21 @@ body {
   right: var(--chat-right-offset, 0);
 }
 
+/* Mobile: Remove left offset since sidebar is hidden */
+@media (max-width: 1023px) {
+  .chat-input-container {
+    left: 0;
+    right: 0;
+    padding-bottom: env(safe-area-inset-bottom, 0.25rem);
+  }
+}
+
 .chat-input-sticky-spacer {
   padding-bottom: clamp(80px, 12vh, 180px);
 }
 
 .chat-input-wrapper {
-  @apply w-full px-4 mx-auto sm:max-w-[90%] lg:max-w-[70%];
+  @apply w-full px-2 sm:px-4 mx-auto sm:max-w-[90%] lg:max-w-[70%];
   overflow: visible;
 }
 

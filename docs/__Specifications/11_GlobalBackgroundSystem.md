@@ -133,3 +133,4 @@ When adding new pages, verify:
 
 The setup is future-proof - any new pages you create will automatically have the themed background system.
 
+

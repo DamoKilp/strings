@@ -591,6 +591,26 @@ export async function getBillingPeriods(): Promise<{ data: BillingPeriod[] | nul
   }
 }
 
+export async function getBillingPeriod(id: string): Promise<{ data: BillingPeriod | null; error: string | null }> {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { data: null, error: 'Not authenticated' }
+
+    const { data, error } = await supabase
+      .from('finance_billing_periods')
+      .select('id,period_name,start_date,end_date,is_active,snapshot_id,notes,created_at,updated_at')
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (error) return { data: null, error: error.message }
+    return { data: data as BillingPeriod, error: null }
+  } catch (err) {
+    return { data: null, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
 export async function createBillingPeriod(period: { period_name: string; start_date: string; end_date: string; snapshot_id?: string | null; notes?: string | null }): Promise<{ data: BillingPeriod | null; error: string | null }> {
   try {
     const supabase = await createClient()

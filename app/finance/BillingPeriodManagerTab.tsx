@@ -135,10 +135,14 @@ export default function BillingPeriodManagerTab({
   // Open edit dialog
   const handleEditClick = useCallback((period: BillingPeriod) => {
     setEditingPeriod(period)
+    // Ensure dates are in YYYY-MM-DD format for HTML date inputs
+    // Database returns dates as strings, but handle both date-only and timestamp formats
+    const startDate = period.start_date.split('T')[0]
+    const endDate = period.end_date.split('T')[0]
     setFormData({
       period_name: period.period_name,
-      start_date: period.start_date,
-      end_date: period.end_date,
+      start_date: startDate,
+      end_date: endDate,
       snapshot_id: period.snapshot_id || '',
       notes: period.notes || '',
     })

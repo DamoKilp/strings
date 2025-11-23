@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/utils/supabase/client';
 import type { User, Session } from '@supabase/supabase-js';
-import type { UserProfile } from '@/types/rbac';
+import type { UserProfile, UserProfileInsert } from '@/types/rbac';
 import { UserRole, ROLE_PERMISSIONS } from '@/types/rbac';
 import type { Permission } from '@/types/rbac';
 
@@ -100,16 +100,18 @@ const loadUserProfile = async (user: User): Promise<UserProfile | null> => {
 
     // Create profile if it doesn't exist
     console.log('🔐 No profile found, creating new user profile...');
+    const profileData: UserProfileInsert = {
+      user_id: user.id,
+      email: user.email!,
+      role: UserRole.USER,
+      display_name: user.email || 'User',
+      is_active: true,
+      updated_at: new Date().toISOString()
+    };
+    // Type assertion needed due to Supabase type inference limitations with @supabase/ssr
     const { data: newProfile, error: createError } = await supabase
       .from('user_profiles')
-      .upsert({
-        user_id: user.id,
-        email: user.email!,
-        role: UserRole.USER as unknown as string,
-        display_name: user.email || 'User',
-        is_active: true,
-        updated_at: new Date().toISOString()
-      } as any, {
+      .upsert(profileData as never, {
         onConflict: 'user_id'
       })
       .select()
@@ -140,7 +142,7 @@ const loadGlobalAuth = async (): Promise<AuthState> => {
 
   // 🚀 SMART DETECTION: If we already have valid auth state, don't reload unnecessarily
   if (globalAuthState.user && globalAuthState.profile && !globalAuthState.isLoading) {
-    if (AUTH_TIMING_DEBUG) console.log('🔐 Auth state is already complete, returning cached state');
+    console.log('🔍 [loadGlobalAuth] Auth state is already complete, returning cached state');
     return {
       user: globalAuthState.user,
       profile: globalAuthState.profile,
@@ -149,12 +151,18 @@ const loadGlobalAuth = async (): Promise<AuthState> => {
       error: null,
     };
   }
+  
+  console.log('🔍 [loadGlobalAuth] Starting auth load. Current state:', {
+    hasUser: !!globalAuthState.user,
+    hasProfile: !!globalAuthState.profile,
+    isLoading: globalAuthState.isLoading
+  });
 
   // Create new loading promise with timeout protection
   globalAuthPromise = (async (): Promise<AuthState> => {
     const startTime = Date.now();
     const loadingId = Math.random().toString(36).substr(2, 9);
-    if (AUTH_DEBUG || AUTH_TIMING_DEBUG) console.log(`🔐 [${loadingId}] Starting unified auth loading...`);
+    console.log(`🔍 [loadGlobalAuth ${loadingId}] Starting unified auth loading...`);
     
       // Add timeout wrapper for stuck auth states
       const timeoutPromise = new Promise<never>((_, reject) => {
@@ -177,10 +185,33 @@ const loadGlobalAuth = async (): Promise<AuthState> => {
         if (AUTH_TIMING_DEBUG) console.log(`🔐 [${loadingId}] Step 1: Calling supabase.auth.getUser()...`);
         const getUserStart = Date.now();
         
+        // Check session first for debugging
+        const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
+        console.log(`🔍 [useAuth ${loadingId}] Initial session check:`, {
+          hasSession: !!initialSession,
+          sessionExpiry: initialSession?.expires_at,
+          sessionAccessToken: initialSession?.access_token ? 'present' : 'missing',
+          sessionError: sessionError?.message,
+          // Check localStorage for Supabase session
+          localStorageKeys: typeof window !== 'undefined' ? Object.keys(localStorage).filter(k => k.includes('supabase') || k.includes('auth')) : 'N/A (server)',
+          // Check cookies (if accessible)
+          cookies: typeof document !== 'undefined' ? document.cookie.split(';').filter(c => c.includes('supabase') || c.includes('auth')).map(c => c.trim().substring(0, 50)) : 'N/A (server)'
+        });
+        
         // Single getUser call - validates token with Supabase Auth server
         const { data: { user }, error: userError } = await supabase.auth.getUser();
         
         const getUserDuration = Date.now() - getUserStart;
+        console.log(`🔍 [useAuth ${loadingId}] getUser() result:`, {
+          hasUser: !!user,
+          userId: user?.id,
+          userEmail: user?.email,
+          hasError: !!userError,
+          errorMessage: userError?.message,
+          errorName: userError?.name,
+          duration: `${getUserDuration}ms`
+        });
+        
         if (AUTH_TIMING_DEBUG) console.log(`🔐 [${loadingId}] Step 1 completed in ${getUserDuration}ms. User:`, user ? `${user.email} (${user.id})` : 'null');
       
         if (userError) {
@@ -352,10 +383,13 @@ export function useAuth(): AuthContext {
     // Register this instance
     listeners.add(updateState);
 
+
     // Initial load (only if not already loaded/loading)
-    if (!globalAuthPromise && globalAuthState.isLoading) {
+    // Also reload if we have no user and no promise (might be stale state)
+    if (!globalAuthPromise && (globalAuthState.isLoading || (!globalAuthState.user && !globalAuthState.isLoading))) {
+    
       loadGlobalAuth();
-    }
+    } 
 
     // Set up auth listener (only once globally; resilient to Fast Refresh/HMR)
     const alreadySubscribed = typeof window !== 'undefined' && Boolean((window as unknown as Record<string, boolean | undefined>)[AUTH_SUB_KEY]);
@@ -419,61 +453,15 @@ export function useAuth(): AuthContext {
       }
     }
 
-    // 🚀 PHASE 3: Intelligent tab visibility response that works WITH Supabase
-    const handleVisibilityChange = async () => {
-      const visibilityId = Math.random().toString(36).substr(2, 9);
-      
-      if (document.visibilityState === 'visible') {
-        if (AUTH_TIMING_DEBUG) console.log(`🔐 [${visibilityId}] Tab became visible, checking auth state...`, {
-          isLoading: globalAuthState.isLoading,
-          hasUser: !!globalAuthState.user,
-          hasProfile: !!globalAuthState.profile,
-          error: globalAuthState.error
-        });
-        
-        // 🚀 INTELLIGENT APPROACH: Only intervene if we detect a real problem
-        // Don't compete with Supabase's internal recovery - let it do its job first
-        
-        // If we have a complete auth state, no need to do anything
-        if (globalAuthState.user && globalAuthState.profile && globalAuthState.session && !globalAuthState.isLoading) {
-          if (AUTH_TIMING_DEBUG) console.log(`🔐 [${visibilityId}] Auth state is complete, no action needed`);
-          return;
-        }
-        
-        // If we have user and profile but missing session, that's acceptable - don't force reload
-        if (globalAuthState.user && globalAuthState.profile && !globalAuthState.isLoading) {
-          if (AUTH_TIMING_DEBUG) console.log(`🔐 [${visibilityId}] User and profile loaded, session missing is acceptable`);
-          return;
-        }
-        
-        // 🚀 ULTRA-SMART: Only intervene if we have a genuinely incomplete auth state
-        if (!globalAuthState.user && !globalAuthState.isLoading) {
-          console.warn(`🔐 [${visibilityId}] No user found when tab became visible, starting auth loading...`);
-          globalAuthState = { ...globalAuthState, isLoading: true };
-          notifyListeners();
-          
-          // Start refresh in background (non-blocking)
-          loadGlobalAuth().catch(error => {
-            console.error(`🔐 [${visibilityId}] Failed to load auth on tab visibility:`, error);
-          });
-        } else if (globalAuthState.isLoading) {
-          if (AUTH_TIMING_DEBUG) console.log(`🔐 [${visibilityId}] Auth already loading, letting Supabase handle it`);
-        } else if (globalAuthState.user && globalAuthState.profile) {
-          if (AUTH_TIMING_DEBUG) console.log(`🔐 [${visibilityId}] Auth state is complete, no action needed`);
-        }
-        
-      } else {
-        if (AUTH_TIMING_DEBUG) console.log(`🔐 [${visibilityId}] Tab became hidden`);
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    // 🚀 FIXED: Removed aggressive visibility change handler that was causing page refreshes
+    // Supabase's auth system handles session refresh automatically via onAuthStateChange
+    // We don't need to manually reload auth when the tab becomes visible - this was causing
+    // unnecessary state updates that triggered page refreshes when switching between apps
+    // 
+    // If auth state is lost, Supabase's onAuthStateChange listener will handle it automatically
 
     return () => {
       listeners.delete(updateState);
-      
-      // Clean up visibility change listener
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
       
       // Clean up auth subscription when no more listeners
       if (listeners.size === 0) {
@@ -486,7 +474,7 @@ export function useAuth(): AuthContext {
   // Get user permissions (memoized to keep stable reference for callbacks)
   const permissions = useMemo(() => (
     state.profile?.role ? (ROLE_PERMISSIONS[state.profile.role as UserRole] || []) : []
-  ), [state.profile?.role]);
+  ), [state.profile]);
 
   // Permission check function
   const hasPermission = useCallback((permission: Permission): boolean => {
@@ -499,7 +487,7 @@ export function useAuth(): AuthContext {
     const userRole = state.profile.role as UserRole;
     const allowedRoles = Array.isArray(role) ? role : [role];
     return allowedRoles.includes(userRole);
-  }, [state.profile?.role]);
+  }, [state.profile]);
 
   // Sign out function
   const signOut = useCallback(async (): Promise<void> => {

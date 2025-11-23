@@ -157,7 +157,13 @@ export function ChatInterface() {
   }, [currentMessages]);
 
   // Adapt chat content max width based on side panel state: larger when no panel, narrower when open
-  const chatMaxWidthClass = useMemo(() => (showCodeSection ? 'max-w-3xl' : 'max-w-7xl'), [showCodeSection]);
+  // On mobile, always full width; on desktop, adapt based on panel state
+  const chatMaxWidthClass = useMemo(() => {
+    if (showCodeSection) {
+      return 'w-full sm:max-w-3xl';
+    }
+    return 'w-full sm:max-w-7xl';
+  }, [showCodeSection]);
 
   // Compute context-aware thinking status text based on the latest user message and toggles
   const lastUserText: string = useMemo(() => {
@@ -747,7 +753,7 @@ export function ChatInterface() {
         >
           {/* Main scrollable chat area (the ONLY vertical scroll container) */}
           <div
-            className="h-full w-full overflow-y-auto p-4 pt-2 pb-2 custom-scrollbar relative bg-transparent"
+            className="h-full w-full overflow-y-auto px-2 sm:px-4 py-2 pb-2 custom-scrollbar relative bg-transparent"
             ref={scrollAreaRef}
             style={{ paddingBottom: (sortedMessages.length === 0 ? 'clamp(60px, 10vh, 120px)' : 'clamp(30px, 12vh, 50px)') } as React.CSSProperties}
           >

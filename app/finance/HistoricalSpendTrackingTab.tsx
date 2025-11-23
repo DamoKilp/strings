@@ -574,8 +574,9 @@ export default function HistoricalSpendTrackingTab({
         <div className="flex-1 min-h-0 overflow-auto">
           <Card className="glass-large">
             <CardContent className="py-1">
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
+              <div className="overflow-x-auto -mx-1 sm:mx-0">
+                <div className="min-w-full inline-block">
+                  <table className="w-full text-xs min-w-[800px]">
                   <thead>
                     <tr className="border-b border-white/10">
                       <th className="text-center py-1 px-1.5 glass-text-secondary text-xs font-medium sticky left-0 bg-slate-900/95 z-10">
@@ -791,6 +792,7 @@ export default function HistoricalSpendTrackingTab({
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             </CardContent>
           </Card>
