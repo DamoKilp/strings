@@ -14,9 +14,6 @@ export function FacadeBackground({ className = '' }: FacadeBackgroundProps) {
   const { facadePreset } = useBackgroundMode();
   // Hydration-safe theme resolution: avoid setState in effects
   const activeTheme = useMemo(() => (resolvedTheme || theme || 'light'), [resolvedTheme, theme]);
-  // Prevent hydration mismatch by only rendering styles after mount
-  // Check if we're on the client side directly (no state needed)
-  const isClient = typeof window !== 'undefined';
 
   // Facade preset definitions with theme variations
   const getFacadeStyles = () => {
@@ -315,24 +312,25 @@ export function FacadeBackground({ className = '' }: FacadeBackgroundProps) {
   const facadeStyles = getFacadeStyles();
 
   // Dark base layer for dark mode - ensures much darker backdrop
+  // Use consistent style object with consistent formatting to prevent hydration mismatches
   const darkBaseStyle = useMemo(() => ({
     position: 'fixed' as const,
-    top: '0',
-    left: '0',
-    right: '0',
-    bottom: '0',
+    top: '0px',
+    left: '0px',
+    right: '0px',
+    bottom: '0px',
     zIndex: -11, // Behind the gradient layer
     background: 'rgba(5, 5, 10, 1)', // Very dark base color
     pointerEvents: 'none' as const,
   }), []);
 
-  // Use consistent style object to prevent hydration mismatches
+  // Use consistent style object with consistent formatting to prevent hydration mismatches
   const style = useMemo(() => ({
     position: 'fixed' as const,
-    top: '0',
-    left: '0',
-    right: '0',
-    bottom: '0',
+    top: '0px',
+    left: '0px',
+    right: '0px',
+    bottom: '0px',
     zIndex: -10,
     background: facadeStyles.primary,
     opacity: 1,
@@ -340,35 +338,28 @@ export function FacadeBackground({ className = '' }: FacadeBackgroundProps) {
     pointerEvents: 'none' as const,
   }), [facadeStyles.primary]);
 
-  // Render placeholder during SSR to prevent hydration mismatch
-  if (!isClient) {
-    return (
-      <div
-        className={className}
-        style={{
-          position: 'fixed',
-          top: '0',
-          left: '0',
-          right: '0',
-          bottom: '0',
-          zIndex: -10,
-          background: 'transparent',
-          pointerEvents: 'none',
-        }}
-      />
-    );
-  }
+  // Always render the same structure on both server and client to prevent hydration mismatches
+  // The dark base layer is always rendered but only visible in dark mode
+  // Use suppressHydrationWarning for style props that may differ due to theme resolution
+  const darkBaseStyleWithVisibility = useMemo(() => ({
+    ...darkBaseStyle,
+    opacity: activeTheme === 'dark' ? 1 : 0,
+  }), [activeTheme, darkBaseStyle]);
 
   return (
     <>
-      {/* Dark base layer - only in dark mode */}
-      {activeTheme === 'dark' && (
-        <div style={darkBaseStyle} />
-      )}
+      {/* Dark base layer - always rendered, visible only in dark mode */}
+      <div 
+        style={darkBaseStyleWithVisibility}
+        suppressHydrationWarning
+        aria-hidden="true"
+      />
       {/* Primary Facade Layer */}
       <div
         className={className}
         style={style}
+        suppressHydrationWarning
+        aria-hidden="true"
       />
     </>
   );

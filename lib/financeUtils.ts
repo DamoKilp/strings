@@ -5,15 +5,20 @@ export interface BillWithRemaining {
     id: string
     company_name: string
     amount: number
+    typical_amount: number | null
     charge_cycle: 'weekly' | 'biweekly' | 'monthly' | 'bimonthly' | 'quarterly' | 'semiannual' | 'annual' | 'custom'
     next_due_date: string
     billing_account_id: string | null
     category: string | null
+    multiplier_type: 'monthly' | 'weekly' | 'one_off' | null
+    payment_day: number | null
   }
   totalWeeklyCost: number
   totalMonthlyCost: number
   remainingThisMonth: number
-  isPaid: boolean
+  weeksRemaining: number | null
+  totalPayments: number // Total number of payments in this pay cycle
+  paymentsPaid: number // Number of payments that have been made (0 = unpaid, totalPayments = fully paid)
 }
 
 export interface CashFlowProjection {
@@ -110,40 +115,258 @@ export function calculateBillsBreakdown(
     id: string
     company_name: string
     amount: number
+    typical_amount?: number | null
     charge_cycle: string
     next_due_date: string
     billing_account_id: string | null
     category: string | null
+    multiplier_type?: 'monthly' | 'weekly' | 'one_off' | null
+    payment_day?: number | null
   }>,
-  paidBillIds: Set<string>,
+  billPaymentsPaid: Record<string, number>, // Map of bill ID to number of payments made
+  payCycleStart?: string,
+  payCycleEnd?: string,
+  daysRemaining?: number,
   currentDate: Date = new Date()
 ): BillWithRemaining[] {
   return bills.map(bill => {
     const { weekly, monthly } = calculateBillCosts(bill.amount, bill.charge_cycle)
-    const remaining = paidBillIds.has(bill.id)
-      ? 0
-      : calculateRemainingThisMonth(bill.amount, bill.charge_cycle, bill.next_due_date, currentDate)
+    const multiplierType = bill.multiplier_type || 'monthly'
+    
+    let remaining = 0
+    let weeksRemaining: number | null = null
+    let totalPayments = 0
+    const paymentsPaid = billPaymentsPaid[bill.id] || 0
+
+    // Calculate total payments in the cycle and remaining based on partial payments
+    {
+      switch (multiplierType) {
+        case 'monthly':
+          // Calculate if payment occurs within the pay cycle based on day of month
+          // IMPORTANT: Bills remain outstanding until explicitly marked as paid
+          if (payCycleStart && payCycleEnd && daysRemaining !== undefined) {
+            try {
+              const nextDueDate = new Date(bill.next_due_date)
+              const cycleStart = new Date(payCycleStart)
+              const cycleEnd = new Date(payCycleEnd)
+              const today = currentDate
+              
+              // Normalize dates to start of day for accurate comparison
+              today.setHours(0, 0, 0, 0)
+              cycleStart.setHours(0, 0, 0, 0)
+              cycleEnd.setHours(0, 0, 0, 0)
+              
+              // Extract day of month from next_due_date (e.g., 21st)
+              const dayOfMonth = nextDueDate.getDate()
+              
+              // Check if payment occurs within the pay cycle (past or future)
+              // IMPORTANT: Bills remain outstanding until explicitly marked as paid
+              // Find ALL occurrences of this day of month within the cycle
+              const paymentDates: Date[] = []
+              
+              // Start from the first month that could contain a payment date
+              // Begin at cycle start's year/month, then check each month until cycle end
+              let checkYear = cycleStart.getFullYear()
+              let checkMonth = cycleStart.getMonth()
+              const endYear = cycleEnd.getFullYear()
+              const endMonth = cycleEnd.getMonth()
+              
+              // Check all months within the cycle
+              while (
+                checkYear < endYear || 
+                (checkYear === endYear && checkMonth <= endMonth)
+              ) {
+                // Try to create a date with this day of month in this month/year
+                // Handle cases where day doesn't exist (e.g., Feb 30)
+                const lastDayOfMonth = new Date(checkYear, checkMonth + 1, 0).getDate()
+                const actualDayOfMonth = Math.min(dayOfMonth, lastDayOfMonth)
+                
+                const potentialPaymentDate = new Date(checkYear, checkMonth, actualDayOfMonth)
+                potentialPaymentDate.setHours(0, 0, 0, 0)
+                
+                // Check if this date falls within the cycle boundaries
+                if (potentialPaymentDate >= cycleStart && potentialPaymentDate <= cycleEnd) {
+                  paymentDates.push(new Date(potentialPaymentDate))
+                }
+                
+                // Move to next month
+                checkMonth++
+                if (checkMonth > 11) {
+                  checkMonth = 0
+                  checkYear++
+                }
+              }
+              
+              // If any payment date falls within the cycle, calculate remaining based on partial payments
+              // Bills remain outstanding until explicitly marked as paid, regardless of date
+              // Monthly bills have at most 1 payment per cycle (even if cycle spans multiple months)
+              if (paymentDates.length > 0) {
+                totalPayments = 1 // Monthly bills have 1 payment per cycle
+                const unpaidPayments = Math.max(0, totalPayments - paymentsPaid)
+                remaining = unpaidPayments > 0 ? monthly : 0
+              } else {
+                // No payment date in this cycle
+                remaining = 0
+                totalPayments = 0
+              }
+            } catch {
+              // Fallback to monthly value if date parsing fails
+              totalPayments = 1
+              const unpaidPayments = Math.max(0, 1 - paymentsPaid)
+              remaining = unpaidPayments > 0 ? monthly : 0
+            }
+          } else {
+            // Fallback: use monthly value
+            totalPayments = 1
+            const unpaidPayments = Math.max(0, 1 - paymentsPaid)
+            remaining = unpaidPayments > 0 ? monthly : 0
+          }
+          break
+        
+        case 'weekly':
+          // Calculate weeks remaining based on payment day and pay cycle dates
+          // IMPORTANT: Weekly payments remain outstanding until explicitly marked as paid
+          if (bill.payment_day !== null && bill.payment_day !== undefined && payCycleStart && payCycleEnd) {
+            const today = new Date(currentDate)
+            const paymentDay = bill.payment_day // 0 = Sunday, 6 = Saturday
+            const cycleStart = new Date(payCycleStart)
+            const cycleEnd = new Date(payCycleEnd)
+            
+            // Normalize dates to start of day for accurate comparison
+            today.setHours(0, 0, 0, 0)
+            cycleStart.setHours(0, 0, 0, 0)
+            cycleEnd.setHours(0, 0, 0, 0)
+            
+            // Find the first payment date on or after cycle start
+            // This includes past payment dates - bills remain outstanding until paid
+            const daysFromCycleStart = (paymentDay - cycleStart.getDay() + 7) % 7
+            let firstPaymentDate = new Date(cycleStart)
+            
+            if (daysFromCycleStart === 0 && cycleStart.getDay() === paymentDay) {
+              // Cycle start is the payment day
+              firstPaymentDate = new Date(cycleStart)
+            } else if (daysFromCycleStart === 0) {
+              // Payment day was earlier in the week cycle start falls on
+              firstPaymentDate.setDate(cycleStart.getDate() + 7 - cycleStart.getDay() + paymentDay)
+            } else {
+              // Payment day is later in the week
+              firstPaymentDate.setDate(cycleStart.getDate() + daysFromCycleStart)
+            }
+            
+            // Count ALL payment occurrences within the pay cycle (past and future)
+            weeksRemaining = 0
+            let checkDate = new Date(firstPaymentDate)
+            
+            // Count all occurrences within cycle boundaries (includes past dates)
+            while (checkDate <= cycleEnd && checkDate >= cycleStart) {
+              weeksRemaining++
+              // Move to next week (same day of week)
+              checkDate.setDate(checkDate.getDate() + 7)
+            }
+            
+            // Ensure weeksRemaining is at least 0
+            weeksRemaining = Math.max(0, weeksRemaining)
+            totalPayments = weeksRemaining
+            
+            // For weekly, amount is already per week
+            // Calculate remaining based on unpaid payments
+            const unpaidPayments = Math.max(0, weeksRemaining - paymentsPaid)
+            remaining = bill.amount * unpaidPayments
+          } else {
+            // Fallback: estimate weeks based on days remaining
+            weeksRemaining = daysRemaining ? Math.ceil((daysRemaining || 0) / 7) : null
+            totalPayments = weeksRemaining || 0
+            const unpaidPayments = Math.max(0, totalPayments - paymentsPaid)
+            remaining = bill.amount * unpaidPayments
+          }
+          break
+        
+        case 'one_off':
+          // Check if the one-off payment date is within the pay cycle
+          if (payCycleStart && payCycleEnd) {
+            try {
+              const paymentDate = new Date(bill.next_due_date)
+              const cycleStart = new Date(payCycleStart)
+              const cycleEnd = new Date(payCycleEnd)
+              
+              // If payment date is within the cycle, calculate remaining based on partial payments
+              if (paymentDate >= cycleStart && paymentDate <= cycleEnd) {
+                totalPayments = 1
+                const unpaidPayments = Math.max(0, 1 - paymentsPaid)
+                remaining = bill.amount * unpaidPayments
+              } else {
+                // Payment is outside the cycle
+                remaining = 0
+                totalPayments = 0
+              }
+            } catch {
+              // Fallback: use amount if date parsing fails, but account for payments
+              totalPayments = 1
+              const unpaidPayments = Math.max(0, 1 - paymentsPaid)
+              remaining = bill.amount * unpaidPayments
+            }
+          } else {
+            // Fallback: use amount, but account for payments
+            totalPayments = 1
+            const unpaidPayments = Math.max(0, 1 - paymentsPaid)
+            remaining = bill.amount * unpaidPayments
+          }
+          break
+        
+        default:
+          // Default to monthly, but account for payments
+          totalPayments = 1
+          const unpaidPayments = Math.max(0, 1 - paymentsPaid)
+          remaining = unpaidPayments > 0 ? monthly : 0
+      }
+    }
+
+    // Calculate weeks remaining in pay cycle for ALL bill types
+    // This is based on the days remaining in the pay cycle period (Today's Date to Pay Cycle End)
+    if (daysRemaining !== undefined && daysRemaining !== null && daysRemaining >= 0) {
+      // Calculate weeks remaining: round up to show full weeks
+      // e.g., 19 days = 2.71 weeks, round up to 3 weeks
+      weeksRemaining = Math.ceil(daysRemaining / 7)
+    } else if (payCycleStart && payCycleEnd) {
+      // Fallback: calculate from pay cycle dates if daysRemaining not provided
+      try {
+        const cycleEnd = new Date(payCycleEnd)
+        const today = new Date(currentDate)
+        today.setHours(0, 0, 0, 0)
+        cycleEnd.setHours(0, 0, 0, 0)
+        
+        const daysRemainingCalc = Math.max(0, Math.ceil((cycleEnd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)))
+        weeksRemaining = Math.ceil(daysRemainingCalc / 7)
+      } catch {
+        // Keep existing weeksRemaining value (null or calculated for weekly bills)
+      }
+    }
 
     return {
       bill: {
         id: bill.id,
         company_name: bill.company_name,
         amount: bill.amount,
+        typical_amount: bill.typical_amount ?? null,
         charge_cycle: bill.charge_cycle as BillWithRemaining['bill']['charge_cycle'],
         next_due_date: bill.next_due_date,
         billing_account_id: bill.billing_account_id,
         category: bill.category,
+        multiplier_type: multiplierType as 'monthly' | 'weekly' | 'one_off' | null,
+        payment_day: bill.payment_day ?? null,
       },
       totalWeeklyCost: weekly,
       totalMonthlyCost: monthly,
       remainingThisMonth: remaining,
-      isPaid: paidBillIds.has(bill.id),
+      weeksRemaining,
+      totalPayments: totalPayments || 1, // Default to 1 if not calculated
+      paymentsPaid: paymentsPaid,
     }
   })
 }
 
 /**
- * Calculate total bills remaining this month
+ * Calculate total bills remaining this month (pay cycle aware)
  */
 export function calculateTotalBillsRemaining(
   bills: Array<{
@@ -151,15 +374,34 @@ export function calculateTotalBillsRemaining(
     amount: number
     charge_cycle: string
     next_due_date: string
+    multiplier_type?: 'monthly' | 'weekly' | 'one_off' | null
+    payment_day?: number | null
   }>,
-  paidBillIds: Set<string>,
+  billPaymentsPaid: Record<string, number>,
+  payCycleStart?: string,
+  payCycleEnd?: string,
   currentDate: Date = new Date()
 ): number {
-  return bills
-    .filter(bill => !paidBillIds.has(bill.id))
-    .reduce((total, bill) => {
-      return total + calculateRemainingThisMonth(bill.amount, bill.charge_cycle, bill.next_due_date, currentDate)
-    }, 0)
+  // Use the breakdown calculation to get accurate totals with partial payments
+  const breakdown = calculateBillsBreakdown(
+    bills.map(b => ({
+      id: b.id,
+      company_name: '',
+      amount: b.amount,
+      charge_cycle: b.charge_cycle,
+      next_due_date: b.next_due_date,
+      billing_account_id: null,
+      category: null,
+      multiplier_type: b.multiplier_type,
+      payment_day: b.payment_day,
+    })),
+    billPaymentsPaid,
+    payCycleStart,
+    payCycleEnd,
+    undefined,
+    currentDate
+  )
+  return breakdown.reduce((sum, item) => sum + item.remainingThisMonth, 0)
 }
 
 /**
@@ -218,4 +460,82 @@ export function getCurrentMonthYear(date: Date = new Date()): string {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
   return `${year}-${month}`
+}
+
+/**
+ * Format next due date for display (e.g., "19-Sep", "24th", "Weekly")
+ */
+export function formatNextDueDate(
+  nextDueDate: string,
+  chargeCycle: string
+): string {
+  // For weekly/biweekly cycles, show the cycle name
+  if (chargeCycle.toLowerCase() === 'weekly') {
+    return 'Weekly'
+  }
+  if (chargeCycle.toLowerCase() === 'biweekly') {
+    return 'Bi-weekly'
+  }
+
+  // For date-based cycles, format the date
+  try {
+    const date = new Date(nextDueDate)
+    if (isNaN(date.getTime())) {
+      return chargeCycle.charAt(0).toUpperCase() + chargeCycle.slice(1)
+    }
+
+    // Format as "DD-MMM" (e.g., "19-Sep", "24-Nov")
+    const day = date.getDate()
+    const month = date.toLocaleDateString('en-AU', { month: 'short' })
+    return `${day}-${month}`
+  } catch {
+    return chargeCycle.charAt(0).toUpperCase() + chargeCycle.slice(1)
+  }
+}
+
+/**
+ * Calculate remaining amount for a bill within the pay cycle
+ */
+export function calculateRemainingInPayCycle(
+  amount: number,
+  chargeCycle: string,
+  nextDueDate: string,
+  payCycleStart: string,
+  payCycleEnd: string,
+  currentDate: Date = new Date()
+): number {
+  const dueDate = new Date(nextDueDate)
+  const cycleStart = new Date(payCycleStart)
+  const cycleEnd = new Date(payCycleEnd)
+  const today = currentDate
+
+  // If bill is already paid, return 0
+  if (dueDate < today && today > cycleStart) {
+    // Bill was due before today and we're past the start of the cycle
+    // Check if it's within the pay cycle
+    if (dueDate >= cycleStart && dueDate <= cycleEnd) {
+      return amount
+    }
+  }
+
+  // If due date is within pay cycle
+  if (dueDate >= cycleStart && dueDate <= cycleEnd) {
+    // For weekly bills, calculate how many payments occur in the cycle
+    if (chargeCycle.toLowerCase() === 'weekly') {
+      const weeksBetween = Math.ceil((cycleEnd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24 * 7))
+      const weeksInCycle = Math.ceil((cycleEnd.getTime() - cycleStart.getTime()) / (1000 * 60 * 60 * 24 * 7))
+      // Count remaining payments in cycle
+      if (dueDate > today) {
+        const paymentsRemaining = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24 * 7))
+        return amount * Math.max(1, paymentsRemaining)
+      }
+      return amount * Math.max(1, Math.ceil((cycleEnd.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24 * 7)) + 1)
+    }
+
+    // For monthly and longer cycles, return full amount if due in cycle
+    return amount
+  }
+
+  // Bill not due in this pay cycle
+  return 0
 }

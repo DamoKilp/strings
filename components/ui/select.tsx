@@ -94,8 +94,23 @@ const SelectContent = React.forwardRef<
     }
   }, [])
 
+  // Only use container if it exists and is not aria-hidden, otherwise render to body
+  const portalContainer = React.useMemo(() => {
+    if (!containerEl) return undefined
+    // Check if the container or any parent has aria-hidden
+    let element: Element | null = containerEl
+    while (element && element !== document.body) {
+      const ariaHidden = element.getAttribute('aria-hidden')
+      if (ariaHidden === 'true') {
+        return undefined // Don't use this container if it's hidden
+      }
+      element = element.parentElement
+    }
+    return containerEl
+  }, [containerEl])
+
   return (
-  <SelectPrimitive.Portal container={containerEl ?? undefined}>
+  <SelectPrimitive.Portal container={portalContainer}>
     <SelectPrimitive.Content
       ref={ref}
       className={cn(

@@ -198,6 +198,46 @@
   backdrop-filter: blur(8px);
 }
 
+/* Tabs Glass - Dark mode text colors */
+/* Target Radix UI tabs trigger elements directly */
+.dark button[data-radix-tabs-trigger][data-state="inactive"],
+.dark [data-radix-tabs-trigger][data-state="inactive"],
+.dark [role="tab"][data-state="inactive"] {
+  color: white !important; /* White text for inactive tabs in dark mode */
+}
+
+.dark button[data-radix-tabs-trigger][data-state="inactive"]:hover,
+.dark [data-radix-tabs-trigger][data-state="inactive"]:hover,
+.dark [role="tab"][data-state="inactive"]:hover {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Ensure active tab text is dark in dark mode too */
+.dark button[data-radix-tabs-trigger][data-state="active"],
+.dark [data-radix-tabs-trigger][data-state="active"],
+.dark [role="tab"][data-state="active"] {
+  background-color: white !important;
+  color: rgb(15, 23, 42) !important; /* slate-900 - dark text on white */
+}
+
+/* Date input fields - reduce top padding to center text vertically */
+input[type="date"].glass-small,
+input[type="date"].h-5 {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  line-height: 1.25rem !important; /* h-5 = 20px = 1.25rem */
+  display: flex !important;
+  align-items: center !important;
+}
+
+/* Date input inner text alignment */
+input[type="date"]::-webkit-datetime-edit,
+input[type="date"]::-webkit-inner-spin-button,
+input[type="date"]::-webkit-calendar-picker-indicator {
+  vertical-align: middle;
+  line-height: 1.25rem;
+}
+
 
 
 
