@@ -459,16 +459,16 @@ export default function BillingPeriodManagerTab({
             <div className="space-y-2">
               <Label htmlFor="snapshot_id">Link to Snapshot (Optional)</Label>
               <Select
-                value={formData.snapshot_id}
+                value={formData.snapshot_id || '__none__'}
                 onValueChange={(value) =>
-                  setFormData((prev) => ({ ...prev, snapshot_id: value }))
+                  setFormData((prev) => ({ ...prev, snapshot_id: value === '__none__' ? '' : value }))
                 }
               >
                 <SelectTrigger className="glass-small">
                   <SelectValue placeholder="Select a snapshot to duplicate" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="__none__">None</SelectItem>
                   {snapshots.map((snapshot) => (
                     <SelectItem key={snapshot.id} value={snapshot.id}>
                       {snapshot.month_year}
@@ -560,16 +560,16 @@ export default function BillingPeriodManagerTab({
             <div className="space-y-2">
               <Label htmlFor="edit_snapshot_id">Link to Snapshot (Optional)</Label>
               <Select
-                value={formData.snapshot_id}
+                value={formData.snapshot_id || '__none__'}
                 onValueChange={(value) =>
-                  setFormData((prev) => ({ ...prev, snapshot_id: value }))
+                  setFormData((prev) => ({ ...prev, snapshot_id: value === '__none__' ? '' : value }))
                 }
               >
                 <SelectTrigger className="glass-small">
                   <SelectValue placeholder="Select a snapshot" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="__none__">None</SelectItem>
                   {snapshots.map((snapshot) => (
                     <SelectItem key={snapshot.id} value={snapshot.id}>
                       {snapshot.month_year}

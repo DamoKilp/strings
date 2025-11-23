@@ -282,13 +282,32 @@ export async function upsertProjection(projection: Partial<FinanceProjection> & 
       ...(projection.id && { id: projection.id }),
     }
 
-    const { data, error } = await supabase
-      .from('finance_projections')
-      .upsert(insertData as any, {
-        onConflict: 'user_id,projection_date,days_remaining,entry_time'
-      })
-      .select()
-      .single()
+    let data, error
+    
+    // If we have an ID, use update instead of upsert to avoid primary key conflicts
+    if (projection.id) {
+      // Remove id from update data since we're updating by id
+      const { id, ...updateData } = insertData
+      const { data: updateResult, error: updateError } = await supabase
+        .from('finance_projections')
+        .update(updateData as any)
+        .eq('id', projection.id)
+        .select()
+        .single()
+      data = updateResult
+      error = updateError
+    } else {
+      // No ID, use upsert with conflict resolution
+      const { data: upsertData, error: upsertError } = await supabase
+        .from('finance_projections')
+        .upsert(insertData as any, {
+          onConflict: 'user_id,projection_date,days_remaining,entry_time'
+        })
+        .select()
+        .single()
+      data = upsertData
+      error = upsertError
+    }
 
     if (error) return { data: null, error: error.message }
     revalidatePath('/finance')

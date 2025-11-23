@@ -35,10 +35,13 @@ import {
   getAllProjections,
   upsertProjection,
   deleteProjection,
+  getBillingPeriods,
+  createBillingPeriod,
   type FinanceAccount,
   type FinanceBill,
   type MonthlySnapshot,
   type FinanceProjection,
+  type BillingPeriod,
 } from '@/app/actions/finance'
 import {
   calculateBillsBreakdown,
@@ -94,6 +97,8 @@ export default function FinancePageClient({
   const [isLoading, setIsLoading] = useState(false)
   const [selectedMonthYear, setSelectedMonthYear] = useState<string>(getCurrentMonthYear())
   const [monthlySnapshots, setMonthlySnapshots] = useState<MonthlySnapshot[]>(initialSnapshots)
+  const [billingPeriods, setBillingPeriods] = useState<BillingPeriod[]>([])
+  const [selectedBillingPeriodId, setSelectedBillingPeriodId] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   
   // Dialog states
@@ -102,13 +107,59 @@ export default function FinancePageClient({
   const [editingBill, setEditingBill] = useState<FinanceBill | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [isCreatingNextPeriod, setIsCreatingNextPeriod] = useState(false)
+  const [isCreateNextPeriodDialogOpen, setIsCreateNextPeriodDialogOpen] = useState(false)
+  
+  // Create next period form state
+  const [nextPeriodForm, setNextPeriodForm] = useState({
+    title: '',
+    start_date: '',
+    end_date: '',
+    reset_bills: true,
+  })
   const [activeTab, setActiveTab] = useState('current')
   const [allHistoricalProjections, setAllHistoricalProjections] = useState<FinanceProjection[]>([])
   const [isLoadingHistorical, setIsLoadingHistorical] = useState(false)
   
-  // Bills Breakdown table sorting state
-  const [billsSortColumn, setBillsSortColumn] = useState<string | null>(null)
-  const [billsSortDirection, setBillsSortDirection] = useState<'asc' | 'desc'>('asc')
+  // Bills Breakdown table sorting state with localStorage persistence
+  const [billsSortColumn, setBillsSortColumn] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('billsSortColumn')
+      if (saved) {
+        try {
+          return JSON.parse(saved)
+        } catch {
+          // Invalid JSON, use default
+        }
+      }
+    }
+    return null
+  })
+  const [billsSortDirection, setBillsSortDirection] = useState<'asc' | 'desc'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('billsSortDirection')
+      if (saved === 'asc' || saved === 'desc') {
+        return saved
+      }
+    }
+    return 'asc'
+  })
+  
+  // Save sort state to localStorage whenever it changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (billsSortColumn !== null) {
+        localStorage.setItem('billsSortColumn', JSON.stringify(billsSortColumn))
+      } else {
+        localStorage.removeItem('billsSortColumn')
+      }
+    }
+  }, [billsSortColumn])
+  
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('billsSortDirection', billsSortDirection)
+    }
+  }, [billsSortDirection])
   
   // Spend Tracking table column order state with localStorage persistence
   const [spendTrackingColumnOrder, setSpendTrackingColumnOrder] = useState<string[]>(() => {
@@ -306,15 +357,17 @@ export default function FinancePageClient({
     if (!user) return
     setIsLoading(true)
     try {
-      const [accountsRes, billsRes, snapshotsRes, projectionsRes] = await Promise.all([
+      const [accountsRes, billsRes, snapshotsRes, projectionsRes, periodsRes] = await Promise.all([
         getAccounts(),
         getBills(),
         getMonthlySnapshots(),
         getProjections(selectedMonthYear),
+        getBillingPeriods(),
       ])
 
       if (accountsRes.data) setAccounts(accountsRes.data)
       if (billsRes.data) setBills(billsRes.data)
+      if (periodsRes.data) setBillingPeriods(periodsRes.data)
       if (snapshotsRes.data) {
         setMonthlySnapshots(snapshotsRes.data)
         const currentMonth = getCurrentMonthYear()
@@ -812,32 +865,143 @@ export default function FinancePageClient({
   }, [user, bills, billPaymentsPaid, billsBreakdown, accountBalances, projection, isSaving])
 
   // Create next billing period - saves current period and resets bills to unpaid
-  const handleCreateNextPeriod = useCallback(async () => {
+  // Open create next period dialog
+  const handleCreateNextPeriod = useCallback(() => {
+    // Set default dates (next month)
+    const today = new Date()
+    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1)
+    const endOfNextMonth = new Date(today.getFullYear(), today.getMonth() + 2, 0)
+    
+    setNextPeriodForm({
+      title: `Period ${nextMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`,
+      start_date: nextMonth.toISOString().split('T')[0],
+      end_date: endOfNextMonth.toISOString().split('T')[0],
+      reset_bills: true,
+    })
+    setIsCreateNextPeriodDialogOpen(true)
+  }, [])
+
+  // Actually create the next period with form data
+  const handleCreateNextPeriodSubmit = useCallback(async () => {
     if (!user || isCreatingNextPeriod) return
+    
+    if (!nextPeriodForm.title.trim()) {
+      toast.error('Period title is required')
+      return
+    }
+    if (!nextPeriodForm.start_date || !nextPeriodForm.end_date) {
+      toast.error('Start date and end date are required')
+      return
+    }
+
+    const startDate = new Date(nextPeriodForm.start_date)
+    const endDate = new Date(nextPeriodForm.end_date)
+    if (endDate < startDate) {
+      toast.error('End date must be after start date')
+      return
+    }
     
     setIsCreatingNextPeriod(true)
     try {
-      // First, save the current period
+      // First, save the current period as a snapshot
       const saved = await handleSaveSnapshot()
       if (!saved) {
-        // If save failed, stop here
+        toast.error('Failed to save current period')
         return
       }
 
       // Wait a moment for the save to complete
       await new Promise(resolve => setTimeout(resolve, 500))
 
-      // Reset to new period:
-      // 1. Keep account balances as they are (already set)
-      // 2. Reset all bills to unpaid (full monthly cost remaining)
-      // 3. Reset selected month/year to current month
-      startTransition(() => {
-        setBillPaymentsPaid({}) // All bills unpaid
-        setSelectedMonthYear(getCurrentMonthYear()) // Current month
-        
-        toast.success('Next billing period created', {
-          description: 'All bills reset to unpaid with full monthly costs'
+      // Get the most recent snapshot (the one we just saved)
+      const snapshotsRes = await getMonthlySnapshots()
+      const latestSnapshot = snapshotsRes.data?.[0] // Snapshots are ordered by month_year desc
+
+      // Create the billing period
+      const periodRes = await createBillingPeriod({
+        period_name: nextPeriodForm.title.trim(),
+        start_date: nextPeriodForm.start_date,
+        end_date: nextPeriodForm.end_date,
+        snapshot_id: latestSnapshot?.id || null,
+        notes: `Created from Current View`,
+      })
+
+      if (periodRes.error) {
+        toast.error(`Failed to create period: ${periodRes.error}`)
+        return
+      }
+
+      // Reset to new period if requested:
+      if (nextPeriodForm.reset_bills) {
+        startTransition(() => {
+          setBillPaymentsPaid({}) // All bills unpaid
         })
+      }
+
+      // Update pay cycle dates to match the new period
+      setPayCycleStart(nextPeriodForm.start_date)
+      setPayCycleEnd(nextPeriodForm.end_date)
+
+      // Reload data to get the new period
+      await loadData()
+
+      // Load projections for the new period's date range
+      const allProjectionsRes = await getAllProjections()
+      if (allProjectionsRes.data && periodRes.data) {
+        const periodStart = new Date(periodRes.data.start_date)
+        const periodEnd = new Date(periodRes.data.end_date)
+        periodStart.setHours(0, 0, 0, 0)
+        periodEnd.setHours(23, 59, 59, 999)
+
+        const filteredProjections = allProjectionsRes.data
+          .filter(p => {
+            const projDate = new Date(p.projection_date)
+            projDate.setHours(0, 0, 0, 0)
+            return projDate >= periodStart && projDate <= periodEnd
+          })
+          .map(p => ({
+            ...p,
+            entry_time: p.entry_time || '00:00:00'
+          }))
+          // Deduplicate
+          .reduce((acc, current) => {
+            const key = `${current.projection_date}-${current.days_remaining}-${current.entry_time}`
+            const existing = acc.find(p => `${p.projection_date}-${p.days_remaining}-${p.entry_time}` === key)
+            if (existing) {
+              const existingDate = new Date(existing.updated_at || existing.created_at)
+              const currentDate = new Date(current.updated_at || current.created_at)
+              if (currentDate > existingDate || (currentDate.getTime() === existingDate.getTime() && current.id > existing.id)) {
+                const index = acc.indexOf(existing)
+                acc[index] = current
+              }
+            } else {
+              acc.push(current)
+            }
+            return acc
+          }, [] as FinanceProjection[])
+          // Sort by date descending, then days remaining ascending, then time descending
+          .sort((a, b) => {
+            const dateDiff = new Date(b.projection_date).getTime() - new Date(a.projection_date).getTime()
+            if (dateDiff !== 0) return dateDiff
+            if (a.days_remaining !== b.days_remaining) return a.days_remaining - b.days_remaining
+            const timeA = a.entry_time || '00:00:00'
+            const timeB = b.entry_time || '00:00:00'
+            return timeB.localeCompare(timeA)
+          })
+
+        setProjections(filteredProjections)
+      }
+
+      // Select the newly created period
+      if (periodRes.data) {
+        setSelectedBillingPeriodId(periodRes.data.id)
+      }
+
+      setIsCreateNextPeriodDialogOpen(false)
+      toast.success('Next billing period created', {
+        description: nextPeriodForm.reset_bills 
+          ? 'All bills reset to unpaid with full monthly costs'
+          : 'Period created successfully'
       })
     } catch (err) {
       console.error('Failed to create next period:', err)
@@ -845,7 +1009,7 @@ export default function FinancePageClient({
     } finally {
       setIsCreatingNextPeriod(false)
     }
-  }, [user, isCreatingNextPeriod, handleSaveSnapshot])
+  }, [user, isCreatingNextPeriod, nextPeriodForm, handleSaveSnapshot, loadData])
 
   // Load monthly snapshot
   const handleLoadSnapshot = useCallback(async (monthYear: string) => {
@@ -883,6 +1047,125 @@ export default function FinancePageClient({
       description: `Restored ${monthYear} snapshot`
     })
   }, [user, accounts, optimisticallyUpdateBalance, debouncedUpdateBalance])
+
+  // Load billing period (loads its associated snapshot and updates pay cycle dates)
+  const handleLoadBillingPeriod = useCallback(async (periodId: string) => {
+    if (!user) return
+    
+    const period = billingPeriods.find(p => p.id === periodId)
+    if (!period) {
+      toast.error('Period not found')
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      // Update pay cycle dates to match the period
+      setPayCycleStart(period.start_date)
+      setPayCycleEnd(period.end_date)
+
+      // Load all projections and filter by period date range
+      const allProjectionsRes = await getAllProjections()
+      if (allProjectionsRes.data) {
+        // Filter projections that fall within the period's date range
+        const periodStart = new Date(period.start_date)
+        const periodEnd = new Date(period.end_date)
+        periodStart.setHours(0, 0, 0, 0)
+        periodEnd.setHours(23, 59, 59, 999)
+
+        const filteredProjections = allProjectionsRes.data
+          .filter(p => {
+            const projDate = new Date(p.projection_date)
+            projDate.setHours(0, 0, 0, 0)
+            return projDate >= periodStart && projDate <= periodEnd
+          })
+          .map(p => ({
+            ...p,
+            entry_time: p.entry_time || '00:00:00'
+          }))
+          // Deduplicate
+          .reduce((acc, current) => {
+            const key = `${current.projection_date}-${current.days_remaining}-${current.entry_time}`
+            const existing = acc.find(p => `${p.projection_date}-${p.days_remaining}-${p.entry_time}` === key)
+            if (existing) {
+              const existingDate = new Date(existing.updated_at || existing.created_at)
+              const currentDate = new Date(current.updated_at || current.created_at)
+              if (currentDate > existingDate || (currentDate.getTime() === existingDate.getTime() && current.id > existing.id)) {
+                const index = acc.indexOf(existing)
+                acc[index] = current
+              }
+            } else {
+              acc.push(current)
+            }
+            return acc
+          }, [] as FinanceProjection[])
+          // Sort by date descending, then days remaining ascending, then time descending
+          .sort((a, b) => {
+            const dateDiff = new Date(b.projection_date).getTime() - new Date(a.projection_date).getTime()
+            if (dateDiff !== 0) return dateDiff
+            if (a.days_remaining !== b.days_remaining) return a.days_remaining - b.days_remaining
+            const timeA = a.entry_time || '00:00:00'
+            const timeB = b.entry_time || '00:00:00'
+            return timeB.localeCompare(timeA)
+          })
+
+        setProjections(filteredProjections)
+      }
+
+      // If period has a snapshot, load it
+      if (period.snapshot_id) {
+        // Find the snapshot
+        const snapshot = monthlySnapshots.find(s => s.id === period.snapshot_id)
+        if (snapshot) {
+          // Load the snapshot data
+          const res = await loadMonthlySnapshot(snapshot.month_year)
+          if (res.error || !res.data) {
+            toast.error('Failed to load period snapshot', { description: res.error || 'No snapshot found' })
+            return
+          }
+          
+          // Restore account balances
+          for (const [accountId, balance] of Object.entries(res.data.account_balances)) {
+            const account = accounts.find(a => a.id === accountId)
+            if (account) {
+              optimisticallyUpdateBalance(accountId, balance)
+              debouncedUpdateBalance(accountId, balance)
+            }
+          }
+          
+          // Restore bill statuses
+          const paymentsPaid: Record<string, number> = {}
+          for (const [billId, status] of Object.entries(res.data.bill_statuses)) {
+            if (typeof status === 'object' && status !== null) {
+              if ('payments_paid' in status && typeof status.payments_paid === 'number') {
+                paymentsPaid[billId] = status.payments_paid
+              } else if ('paid' in status && status.paid === true) {
+                paymentsPaid[billId] = 999
+              }
+            }
+          }
+          setBillPaymentsPaid(paymentsPaid)
+        } else {
+          toast.error('Period snapshot not found')
+        }
+      } else {
+        // Period without snapshot - just reset bills if needed
+        setBillPaymentsPaid({})
+      }
+      
+      setSelectedBillingPeriodId(periodId)
+      setSelectedMonthYear(getCurrentMonthYear()) // Reset to current month for display
+      
+      toast.success('Period loaded', {
+        description: `Switched to ${period.period_name}`
+      })
+    } catch (error) {
+      console.error('Error loading billing period:', error)
+      toast.error('Failed to load billing period')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [user, billingPeriods, monthlySnapshots, accounts, optimisticallyUpdateBalance, debouncedUpdateBalance])
 
   // Add new projection row
   const handleAddProjectionRow = useCallback(() => {
@@ -1059,13 +1342,13 @@ export default function FinancePageClient({
     hasClientModifications.current = true
     const res = await upsertProjection(updatedProjection)
     if (res.error) {
-      toast.error('Failed to update projection', { description: res.error })
-      // Reload projections on error
-      const projectionsRes = await getProjections(selectedMonthYear)
-      if (projectionsRes.data) {
-        setProjections(projectionsRes.data)
-        hasClientModifications.current = false
+      // Don't reload on error - keep the optimistic update
+      // Only show error if it's not a duplicate key (which might be a race condition)
+      if (!res.error.includes('duplicate key')) {
+        toast.error('Failed to update projection', { description: res.error })
       }
+      // Don't revert the state - keep the optimistic update
+      hasClientModifications.current = false
     } else if (res.data) {
       setProjections(prev => prev.map(p => p.id === projectionId ? res.data! : p))
       
@@ -1697,6 +1980,8 @@ export default function FinancePageClient({
                       billsRemaining={billsRemaining}
                       payCycleEnd={payCycleEnd}
                       columnOrder={spendTrackingColumnOrder}
+                      rowIndex={index}
+                      allProjections={projections}
                       onUpdate={handleUpdateProjection}
                       onDelete={handleDeleteProjection}
                     />
@@ -1728,16 +2013,38 @@ export default function FinancePageClient({
             {isCreatingNextPeriod ? 'Creating...' : 'Create Next Billing Period'}
           </Button>
           <Select
-            value={selectedMonthYear}
+            value={selectedBillingPeriodId || selectedMonthYear}
             onValueChange={(value) => {
-              setSelectedMonthYear(value)
-              loadData()
+              // Check if it's a billing period ID or a month_year
+              const period = billingPeriods.find(p => p.id === value)
+              if (period) {
+                handleLoadBillingPeriod(value)
+              } else {
+                // It's a month_year (snapshot)
+                setSelectedBillingPeriodId(null)
+                setSelectedMonthYear(value)
+                loadData()
+              }
             }}
           >
-            <SelectTrigger className="w-40 glass-small text-xs h-6">
-              <SelectValue />
+            <SelectTrigger className="w-48 glass-small text-xs h-6">
+              <SelectValue placeholder="Select period" />
             </SelectTrigger>
             <SelectContent>
+              {/* Billing Periods */}
+              {billingPeriods.length > 0 && (
+                <>
+                  {billingPeriods.map(period => (
+                    <SelectItem key={period.id} value={period.id}>
+                      {period.period_name}
+                    </SelectItem>
+                  ))}
+                  <div className="px-2 py-1.5 text-xs glass-text-secondary border-t border-white/10 mt-1">
+                    Snapshots:
+                  </div>
+                </>
+              )}
+              {/* Monthly Snapshots */}
               {monthlySnapshots.map(snapshot => (
                 <SelectItem key={snapshot.month_year} value={snapshot.month_year}>
                   {snapshot.month_year}
@@ -1815,6 +2122,89 @@ export default function FinancePageClient({
             }}
             onSubmit={handleAddBill}
           />
+        </DialogContentGlass>
+      </Dialog>
+
+      {/* Create Next Period Dialog */}
+      <Dialog open={isCreateNextPeriodDialogOpen} onOpenChange={setIsCreateNextPeriodDialogOpen}>
+        <DialogContentGlass className="max-w-md">
+          <DialogHeaderGlass>
+            <DialogTitle>Create Next Billing Period</DialogTitle>
+            <DialogDescription>
+              Set up a new billing period with start and end dates
+            </DialogDescription>
+          </DialogHeaderGlass>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="period_title">Period Title</Label>
+              <Input
+                id="period_title"
+                value={nextPeriodForm.title}
+                onChange={(e) =>
+                  setNextPeriodForm((prev) => ({ ...prev, title: e.target.value }))
+                }
+                placeholder="e.g., January 2025 Budget"
+                className="glass-small"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="period_start_date">Start Date</Label>
+                <Input
+                  id="period_start_date"
+                  type="date"
+                  value={nextPeriodForm.start_date}
+                  onChange={(e) =>
+                    setNextPeriodForm((prev) => ({ ...prev, start_date: e.target.value }))
+                  }
+                  className="glass-small"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="period_end_date">End Date</Label>
+                <Input
+                  id="period_end_date"
+                  type="date"
+                  value={nextPeriodForm.end_date}
+                  onChange={(e) =>
+                    setNextPeriodForm((prev) => ({ ...prev, end_date: e.target.value }))
+                  }
+                  className="glass-small"
+                />
+              </div>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="reset_bills"
+                checked={nextPeriodForm.reset_bills}
+                onCheckedChange={(checked) =>
+                  setNextPeriodForm((prev) => ({ ...prev, reset_bills: checked === true }))
+                }
+              />
+              <Label
+                htmlFor="reset_bills"
+                className="text-sm font-normal cursor-pointer"
+              >
+                Reset all bills to unpaid
+              </Label>
+            </div>
+          </div>
+          <DialogFooterGlass>
+            <Button
+              variant="ghost"
+              onClick={() => setIsCreateNextPeriodDialogOpen(false)}
+              disabled={isCreatingNextPeriod}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateNextPeriodSubmit}
+              disabled={isCreatingNextPeriod}
+              className="glass-small"
+            >
+              {isCreatingNextPeriod ? 'Creating...' : 'Create Period'}
+            </Button>
+          </DialogFooterGlass>
         </DialogContentGlass>
       </Dialog>
     </div>
@@ -2824,6 +3214,8 @@ const ProjectionRow = memo(({
   billsRemaining,
   payCycleEnd,
   columnOrder,
+  rowIndex,
+  allProjections,
   onUpdate,
   onDelete,
 }: {
@@ -2832,17 +3224,22 @@ const ProjectionRow = memo(({
   billsRemaining: number
   payCycleEnd: string
   columnOrder: string[]
+  rowIndex: number
+  allProjections: FinanceProjection[]
   onUpdate: (id: string, updates: Partial<FinanceProjection>) => void
   onDelete: (id: string) => void
 }) => {
   const [editingField, setEditingField] = useState<string | null>(null)
   const [tempAccountBalances, setTempAccountBalances] = useState<Record<string, string>>({})
   const [tempBillsRemaining, setTempBillsRemaining] = useState(projection.bills_remaining.toString())
+  const [tempDaysRemaining, setTempDaysRemaining] = useState(projection.days_remaining.toString())
   const [tempNotes, setTempNotes] = useState(projection.notes || '')
+  const isNavigating = useRef(false)
 
   // Initialize temp values - use stable dependencies to avoid infinite loops
   const projectionId = projection.id
   const projectionBillsRemaining = projection.bills_remaining
+  const projectionDaysRemaining = projection.days_remaining
   const projectionNotes = projection.notes || ''
   const projectionAccountBalancesStr = useMemo(() => JSON.stringify(projection.account_balances), [projection.account_balances])
   const accountIdsStr = useMemo(() => accounts.map(a => a.id).sort().join(','), [accounts])
@@ -2854,11 +3251,12 @@ const ProjectionRow = memo(({
     }
     setTempAccountBalances(balances)
     setTempBillsRemaining(projection.bills_remaining.toString())
+    setTempDaysRemaining(projection.days_remaining.toString())
     setTempNotes(projection.notes || '')
     // Using stringified versions (projectionAccountBalancesStr, accountIdsStr) to detect changes
     // accounts and projection.account_balances are used in effect body but changes are detected via stringified versions
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectionId, projectionBillsRemaining, projectionNotes, projectionAccountBalancesStr, accountIdsStr])
+  }, [projectionId, projectionBillsRemaining, projectionDaysRemaining, projectionNotes, projectionAccountBalancesStr, accountIdsStr, editingField])
 
   // Calculate totals and derived values
   const total = useMemo(() => {
@@ -2924,6 +3322,21 @@ const ProjectionRow = memo(({
     })
   }, [projection.id, total, weeksRemaining, projection.days_remaining, onUpdate])
 
+  // Update days remaining
+  const handleDaysRemainingChange = useCallback((value: string) => {
+    setTempDaysRemaining(value)
+    const numValue = parseInt(value) || 0
+    const newDaysRemaining = Math.max(0, numValue)
+    const newWeeksRemaining = newDaysRemaining > 0 ? newDaysRemaining / 7 : 0
+    
+    // Recalculate cash_per_week and spending_per_day based on new days_remaining
+    onUpdate(projection.id, {
+      days_remaining: newDaysRemaining,
+      cash_per_week: newWeeksRemaining > 0 ? cashAvailable / newWeeksRemaining : null,
+      spending_per_day: newDaysRemaining > 0 ? cashAvailable / newDaysRemaining : null,
+    })
+  }, [projection.id, cashAvailable, onUpdate])
+
   // Update notes
   const handleNotesChange = useCallback((value: string) => {
     setTempNotes(value)
@@ -2953,49 +3366,180 @@ const ProjectionRow = memo(({
     onUpdate(projection.id, { entry_time: timeValue || null })
   }, [projection.id, onUpdate])
 
-  // Helper function to navigate to next/previous account
-  const navigateToAccount = useCallback((direction: 'left' | 'right', currentAccountId: string) => {
-    // Get all account columns in order
-    const accountColumns = columnOrder.filter(id => id.startsWith('account_'))
-    const currentIndex = accountColumns.findIndex(id => id === `account_${currentAccountId}`)
-    
-    if (currentIndex === -1 || accountColumns.length <= 1) return
-    
-    let targetIndex: number
-    if (direction === 'right') {
-      targetIndex = currentIndex + 1
-      if (targetIndex >= accountColumns.length) {
-        targetIndex = 0 // Wrap to first account
-      }
-    } else {
-      targetIndex = currentIndex - 1
-      if (targetIndex < 0) {
-        targetIndex = accountColumns.length - 1 // Wrap to last account
-      }
+  // Helper function to get editable column IDs in order
+  const getEditableColumns = useCallback(() => {
+    return columnOrder.filter(id => {
+      return id === 'time' || 
+             id === 'daysRemaining' || 
+             id.startsWith('account_') || 
+             id === 'billsRemaining' || 
+             id === 'notes'
+    })
+  }, [columnOrder])
+
+  // Helper function to map field name to column ID
+  const getColumnIdFromField = useCallback((field: string): string | null => {
+    if (field === 'entry_time') return 'time'
+    if (field === 'days_remaining') return 'daysRemaining'
+    if (field.startsWith('account_')) return field
+    if (field === 'bills_remaining') return 'billsRemaining'
+    if (field === 'notes') return 'notes'
+    return null
+  }, [])
+
+  // Helper function to map column ID to field name
+  const getFieldFromColumnId = useCallback((columnId: string): string | null => {
+    if (columnId === 'time') return 'entry_time'
+    if (columnId === 'daysRemaining') return 'days_remaining'
+    if (columnId.startsWith('account_')) return columnId
+    if (columnId === 'billsRemaining') return 'bills_remaining'
+    if (columnId === 'notes') return 'notes'
+    return null
+  }, [])
+
+  // Save current field value before navigating
+  const saveCurrentField = useCallback((field: string) => {
+    if (field === 'entry_time') {
+      handleTimeChange(tempTime)
+    } else if (field === 'days_remaining') {
+      handleDaysRemainingChange(tempDaysRemaining)
+    } else if (field.startsWith('account_')) {
+      const accountId = field.replace('account_', '')
+      handleAccountBalanceChange(accountId, tempAccountBalances[accountId] || '0')
+    } else if (field === 'bills_remaining') {
+      handleBillsRemainingChange(tempBillsRemaining)
+    } else if (field === 'notes') {
+      handleNotesChange(tempNotes)
     }
-    
-    const targetColumnId = accountColumns[targetIndex]
-    const targetAccountId = targetColumnId.replace('account_', '')
-    
-    // Save current value before navigating (only if it has changed)
-    const currentValue = tempAccountBalances[currentAccountId] || '0'
-    const originalValue = (projection.account_balances[currentAccountId] || 0).toString()
-    if (currentValue !== originalValue) {
-      handleAccountBalanceChange(currentAccountId, currentValue)
-    }
-    
-    // Navigate to next account
-    setEditingField(`account_${targetAccountId}`)
-    
-    // Focus the input after state update
-    setTimeout(() => {
-      const input = document.querySelector(`input[data-account-id="${targetAccountId}"]`) as HTMLInputElement
-      if (input) {
-        input.focus()
-        input.select()
+  }, [tempTime, tempDaysRemaining, tempAccountBalances, tempBillsRemaining, tempNotes, handleTimeChange, handleDaysRemainingChange, handleAccountBalanceChange, handleBillsRemainingChange, handleNotesChange])
+
+  // Unified navigation function for all editable fields
+  const navigateField = useCallback(async (direction: 'left' | 'right' | 'up' | 'down', currentField: string) => {
+    if (!currentField) return
+
+    // Save current value before navigating
+    saveCurrentField(currentField)
+
+    const editableColumns = getEditableColumns()
+    const currentColumnId = getColumnIdFromField(currentField)
+    if (!currentColumnId) return
+
+    const currentColumnIndex = editableColumns.indexOf(currentColumnId)
+    if (currentColumnIndex === -1) return
+
+    if (direction === 'left' || direction === 'right') {
+      // Navigate within the same row
+      let targetColumnIndex: number
+      if (direction === 'right') {
+        targetColumnIndex = currentColumnIndex + 1
+        if (targetColumnIndex >= editableColumns.length) {
+          targetColumnIndex = 0 // Wrap to first editable field
+        }
+      } else {
+        targetColumnIndex = currentColumnIndex - 1
+        if (targetColumnIndex < 0) {
+          targetColumnIndex = editableColumns.length - 1 // Wrap to last editable field
+        }
       }
-    }, 0)
-  }, [columnOrder, tempAccountBalances, projection.account_balances, handleAccountBalanceChange])
+
+      const targetColumnId = editableColumns[targetColumnIndex]
+      const targetField = getFieldFromColumnId(targetColumnId)
+      if (!targetField) return
+
+      // Set target field immediately, then focus
+      setEditingField(targetField)
+      
+      // Focus the input after state update
+      setTimeout(() => {
+        if (targetField.startsWith('account_')) {
+          const accountId = targetField.replace('account_', '')
+          const input = document.querySelector(`input[data-account-id="${accountId}"]`) as HTMLInputElement
+          if (input) {
+            input.focus()
+            input.select()
+          }
+        } else {
+          const input = document.querySelector(`input[data-field="${targetField}"]`) as HTMLInputElement
+          if (input) {
+            input.focus()
+            input.select()
+          }
+        }
+      }, 0)
+    } else if (direction === 'up' || direction === 'down') {
+      // Navigate to the same field in adjacent row
+      let targetRowIndex: number
+      if (direction === 'down') {
+        targetRowIndex = rowIndex + 1
+        if (targetRowIndex >= allProjections.length) {
+          return // Can't go down from last row
+        }
+      } else {
+        targetRowIndex = rowIndex - 1
+        if (targetRowIndex < 0) {
+          return // Can't go up from first row
+        }
+      }
+
+      const targetProjection = allProjections[targetRowIndex]
+      if (!targetProjection) return
+
+      setEditingField(null) // Clear current editing
+      
+      // Navigate to the same field in the target row
+      // Since each row has its own state, we need to trigger edit mode by clicking the span
+      setTimeout(() => {
+        const targetRow = document.querySelector(`tr[data-projection-id="${targetProjection.id}"]`)
+        if (targetRow) {
+          if (currentField.startsWith('account_')) {
+            const accountId = currentField.replace('account_', '')
+            // Try to find existing input first (if already in edit mode)
+            let input = targetRow.querySelector(`input[data-account-id="${accountId}"]`) as HTMLInputElement
+            if (input) {
+              input.focus()
+              input.select()
+            } else {
+              // Click the span to enter edit mode, then focus the input
+              const span = targetRow.querySelector(`span[data-account-id="${accountId}"]`) as HTMLElement
+              if (!span) {
+                // Fallback: try clicking any element that might trigger edit mode
+                const clickable = targetRow.querySelector(`td:has(span[onclick*="account_${accountId}"])`) as HTMLElement
+                if (clickable) {
+                  const spanInCell = clickable.querySelector('span') as HTMLElement
+                  if (spanInCell) spanInCell.click()
+                }
+              } else {
+                span.click()
+              }
+              // Wait for input to appear, then focus it
+              setTimeout(() => {
+                input = targetRow.querySelector(`input[data-account-id="${accountId}"]`) as HTMLInputElement
+                if (input) {
+                  input.focus()
+                  input.select()
+                }
+              }, 50)
+            }
+          } else {
+            // For non-account fields, click the span to enter edit mode
+            const span = targetRow.querySelector(`span[data-field="${currentField}"]`) as HTMLElement
+            if (span) {
+              span.click()
+              // Wait for input to appear, then focus it
+              setTimeout(() => {
+                const input = targetRow.querySelector(`input[data-field="${currentField}"]`) as HTMLInputElement
+                if (input) {
+                  input.focus()
+                  input.select()
+                }
+              }, 50)
+            }
+          }
+        }
+      }, 0)
+    }
+  }, [rowIndex, allProjections, getEditableColumns, getColumnIdFromField, getFieldFromColumnId, saveCurrentField])
+
 
   // Render cells based on column order
   const renderCell = (columnId: string) => {
@@ -3008,13 +3552,14 @@ const ProjectionRow = memo(({
               type="time"
               step="1"
               value={tempTime || ''}
+              data-field="entry_time"
               onChange={(e) => setTempTime(e.target.value)}
               onFocus={(e) => e.target.select()}
               onBlur={() => {
                 handleTimeChange(tempTime)
                 setEditingField(null)
               }}
-              onKeyDown={(e) => {
+              onKeyDown={async (e) => {
                 if (e.key === 'Enter') {
                   handleTimeChange(tempTime)
                   setEditingField(null)
@@ -3023,6 +3568,14 @@ const ProjectionRow = memo(({
                   setTempTime(projection.entry_time || '')
                   setEditingField(null)
                 }
+                if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                  e.preventDefault()
+                  await navigateField(e.key === 'ArrowRight' ? 'right' : 'left', 'entry_time')
+                }
+                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                  e.preventDefault()
+                  await navigateField(e.key === 'ArrowDown' ? 'down' : 'up', 'entry_time')
+                }
               }}
               className="w-20 glass-small h-5 text-xs text-center"
               autoFocus
@@ -3030,6 +3583,7 @@ const ProjectionRow = memo(({
           ) : (
             <span 
               className="glass-text-primary text-xs cursor-pointer hover:bg-white/10 px-0.5 py-0 rounded inline-block"
+              data-field="entry_time"
               onClick={() => setEditingField('entry_time')}
               title="Click to edit"
             >
@@ -3040,11 +3594,68 @@ const ProjectionRow = memo(({
       )
     }
     
-    // Days Remaining column
+    // Days Remaining column - Editable
     if (columnId === 'daysRemaining') {
       return (
-        <td key={columnId} className="py-1 px-1.5 text-center glass-text-primary text-xs">
-          {projection.days_remaining}
+        <td key={columnId} className="py-1 px-1.5 text-center">
+          {editingField === 'days_remaining' ? (
+            <Input
+              type="number"
+              min="0"
+              step="1"
+              value={tempDaysRemaining}
+              data-field="days_remaining"
+              onChange={(e) => setTempDaysRemaining(e.target.value)}
+              onFocus={(e) => e.target.select()}
+              onBlur={() => {
+                // Don't blur if we're navigating to another field
+                if (isNavigating.current) {
+                  isNavigating.current = false
+                  return
+                }
+                handleDaysRemainingChange(tempDaysRemaining)
+                setEditingField(null)
+              }}
+              onKeyDown={async (e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  handleDaysRemainingChange(tempDaysRemaining)
+                  setEditingField(null)
+                }
+                if (e.key === 'Escape') {
+                  setTempDaysRemaining(projection.days_remaining.toString())
+                  setEditingField(null)
+                }
+                if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  isNavigating.current = true
+                  // Save current value before navigating
+                  handleDaysRemainingChange(tempDaysRemaining)
+                  await navigateField(e.key === 'ArrowRight' ? 'right' : 'left', 'days_remaining')
+                }
+                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  isNavigating.current = true
+                  // Save current value before navigating
+                  handleDaysRemainingChange(tempDaysRemaining)
+                  await navigateField(e.key === 'ArrowDown' ? 'down' : 'up', 'days_remaining')
+                }
+              }}
+              className="w-16 glass-small h-5 text-xs text-center"
+              autoFocus
+            />
+          ) : (
+            <span 
+              className="glass-text-primary text-xs cursor-pointer hover:bg-white/10 px-0.5 py-0 rounded inline-block"
+              data-field="days_remaining"
+              onClick={() => setEditingField('days_remaining')}
+              title="Click to edit"
+            >
+              {projection.days_remaining}
+            </span>
+          )}
         </td>
       )
     }
@@ -3070,7 +3681,7 @@ const ProjectionRow = memo(({
                 handleAccountBalanceChange(account.id, tempAccountBalances[account.id] || '0')
                 setEditingField(null)
               }}
-              onKeyDown={(e) => {
+              onKeyDown={async (e) => {
                 if (e.key === 'Enter') {
                   handleAccountBalanceChange(account.id, tempAccountBalances[account.id] || '0')
                   setEditingField(null)
@@ -3082,13 +3693,13 @@ const ProjectionRow = memo(({
                   }))
                   setEditingField(null)
                 }
-                if (e.key === 'ArrowRight') {
+                if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
                   e.preventDefault()
-                  navigateToAccount('right', account.id)
+                  await navigateField(e.key === 'ArrowRight' ? 'right' : 'left', `account_${account.id}`)
                 }
-                if (e.key === 'ArrowLeft') {
+                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
                   e.preventDefault()
-                  navigateToAccount('left', account.id)
+                  await navigateField(e.key === 'ArrowDown' ? 'down' : 'up', `account_${account.id}`)
                 }
               }}
               className="w-20 glass-small h-5 text-xs text-right"
@@ -3097,6 +3708,7 @@ const ProjectionRow = memo(({
           ) : (
             <span 
               className="glass-text-primary text-xs cursor-pointer hover:bg-white/10 px-0.5 py-0 rounded inline-block"
+              data-account-id={account.id}
               onClick={() => setEditingField(`account_${account.id}`)}
               title="Click to edit"
             >
@@ -3125,13 +3737,14 @@ const ProjectionRow = memo(({
               type="number"
               step="0.01"
               value={tempBillsRemaining}
+              data-field="bills_remaining"
               onChange={(e) => setTempBillsRemaining(e.target.value)}
               onFocus={(e) => e.target.select()}
               onBlur={() => {
                 handleBillsRemainingChange(tempBillsRemaining)
                 setEditingField(null)
               }}
-              onKeyDown={(e) => {
+              onKeyDown={async (e) => {
                 if (e.key === 'Enter') {
                   handleBillsRemainingChange(tempBillsRemaining)
                   setEditingField(null)
@@ -3140,6 +3753,14 @@ const ProjectionRow = memo(({
                   setTempBillsRemaining(projection.bills_remaining.toString())
                   setEditingField(null)
                 }
+                if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                  e.preventDefault()
+                  await navigateField(e.key === 'ArrowRight' ? 'right' : 'left', 'bills_remaining')
+                }
+                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                  e.preventDefault()
+                  await navigateField(e.key === 'ArrowDown' ? 'down' : 'up', 'bills_remaining')
+                }
               }}
               className="w-24 glass-small h-5 text-xs text-right"
               autoFocus
@@ -3147,6 +3768,7 @@ const ProjectionRow = memo(({
           ) : (
             <span 
               className="glass-text-primary text-xs cursor-pointer hover:bg-white/10 px-0.5 py-0 rounded inline-block font-semibold"
+              data-field="bills_remaining"
               onClick={() => setEditingField('bills_remaining')}
               title="Click to edit"
             >
@@ -3209,13 +3831,14 @@ const ProjectionRow = memo(({
           {editingField === 'notes' ? (
             <Input
               value={tempNotes}
+              data-field="notes"
               onChange={(e) => setTempNotes(e.target.value)}
               onFocus={(e) => e.target.select()}
               onBlur={() => {
                 handleNotesChange(tempNotes)
                 setEditingField(null)
               }}
-              onKeyDown={(e) => {
+              onKeyDown={async (e) => {
                 if (e.key === 'Enter') {
                   handleNotesChange(tempNotes)
                   setEditingField(null)
@@ -3224,6 +3847,14 @@ const ProjectionRow = memo(({
                   setTempNotes(projection.notes || '')
                   setEditingField(null)
                 }
+                if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                  e.preventDefault()
+                  await navigateField(e.key === 'ArrowRight' ? 'right' : 'left', 'notes')
+                }
+                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                  e.preventDefault()
+                  await navigateField(e.key === 'ArrowDown' ? 'down' : 'up', 'notes')
+                }
               }}
               className="w-full glass-small h-5 text-xs"
               autoFocus
@@ -3231,6 +3862,7 @@ const ProjectionRow = memo(({
           ) : (
             <span 
               className="glass-text-secondary text-xs cursor-pointer hover:bg-white/10 px-0.5 py-0 rounded inline-block truncate max-w-[100px]"
+              data-field="notes"
               onClick={() => setEditingField('notes')}
               title="Click to edit"
             >
@@ -3265,7 +3897,10 @@ const ProjectionRow = memo(({
   }
 
   return (
-    <tr className="border-b border-white/5 hover:bg-white/5 transition-colors">
+    <tr 
+      className="border-b border-white/5 hover:bg-white/5 transition-colors"
+      data-projection-id={projection.id}
+    >
       {columnOrder.map(columnId => renderCell(columnId))}
     </tr>
   )
