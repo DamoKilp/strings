@@ -1,6 +1,6 @@
 "use client";
 import React, { useMemo, useRef } from 'react';
-import { Dialog, DialogContentGlass, DialogHeaderGlass, DialogFooterGlass, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContentGlass, DialogHeaderGlass, DialogFooterGlass, DialogTitle, DialogDescription, DialogTrigger, DialogClose } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -17,18 +17,23 @@ interface DriveModeSettingsModalProps {
 
 // Expanded voice options commonly available for OpenAI realtime/TTS (subject to model support)
 const VOICE_CHOICES = [
-  { id: 'verse', label: 'Verse' },
-  { id: 'alloy', label: 'Alloy' },
+  { id: 'alloy', label: 'Alloy', description: 'Neutral and balanced.' },
+  { id: 'ash', label: 'Ash', description: 'Clear and precise.' },
+  { id: 'ballad', label: 'Ballad', description: 'Melodic and smooth.' },
+  { id: 'coral', label: 'Coral', description: 'Warm and friendly.' },
+  { id: 'echo', label: 'Echo', description: 'Resonant and deep.' },
+  { id: 'sage', label: 'Sage', description: 'Calm and thoughtful.' },
+  { id: 'shimmer', label: 'Shimmer', description: 'Bright and energetic.' },
+  { id: 'verse', label: 'Verse', description: 'Versatile and expressive.' },
+  // Additional voices (without descriptions for now)
   { id: 'aria', label: 'Aria' },
   { id: 'amber', label: 'Amber' },
   { id: 'breeze', label: 'Breeze' },
   { id: 'cobalt', label: 'Cobalt' },
-  { id: 'coral', label: 'Coral' },
   { id: 'charlie', label: 'Charlie' },
   { id: 'opal', label: 'Opal' },
   { id: 'onyx', label: 'Onyx' },
   { id: 'pearl', label: 'Pearl' },
-  { id: 'sage', label: 'Sage' },
   { id: 'nova', label: 'Nova' },
   // New high-naturalness voices announced with gpt-realtime
   { id: 'marin', label: 'Marin' },
@@ -189,11 +194,11 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
             <div className="space-y-6 max-w-5xl mx-auto">
               {/* Audio & Voice Settings */}
               <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Audio & Voice</h3>
+                <h3 className="text-lg font-semibold glass-text-primary">Audio & Voice</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Language */}
-                  <div className="space-y-2 p-4 rounded-lg border bg-background/50">
-                    <Label htmlFor="dm-language" className="text-sm font-medium">Default language (BCP‑47)</Label>
+                  <div className="space-y-2 p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-white/10 backdrop-blur-sm">
+                    <Label htmlFor="dm-language" className="text-sm font-medium glass-text-primary">Default language (BCP‑47)</Label>
                     <Select value={settings.language} onValueChange={(v) => update({ language: v })}>
                       <SelectTrigger id="dm-language">
                         <SelectValue placeholder={defaults.language} />
@@ -207,8 +212,8 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
                   </div>
 
                   {/* Voice (filtered per model) */}
-                  <div className="space-y-2 p-4 rounded-lg border bg-background/50">
-                    <Label htmlFor="dm-voice" className="text-sm font-medium">Voice</Label>
+                  <div className="space-y-2 p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-white/10 backdrop-blur-sm">
+                    <Label htmlFor="dm-voice" className="text-sm font-medium glass-text-primary">Voice</Label>
                     <Select value={settings.voice} onValueChange={(v) => update({ voice: v })}>
                       <SelectTrigger id="dm-voice">
                         <SelectValue placeholder={supportedVoices ? 'Select voice' : 'Loading…'} />
@@ -218,18 +223,21 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
                           .filter((id) => typeof id === 'string' && id.trim().length > 0)
                           .map(id => {
                           const meta = VOICE_CHOICES.find(v => v.id === id);
+                          const displayText = meta?.description 
+                            ? `${meta.label} - ${meta.description}`
+                            : (meta?.label || id);
                           return (
-                            <SelectItem key={id} value={id}>{meta?.label || id}</SelectItem>
+                            <SelectItem key={id} value={id}>{displayText}</SelectItem>
                           );
                         })}
                       </SelectContent>
                     </Select>
-                    <div className="text-xs text-muted-foreground mt-1">Model: {effectiveModel}</div>
+                    <div className="text-xs glass-text-secondary mt-1">Model: {effectiveModel}</div>
                   </div>
 
                   {/* Model */}
-                  <div className="space-y-2 p-4 rounded-lg border bg-background/50">
-                    <Label htmlFor="dm-model" className="text-sm font-medium">Realtime model</Label>
+                  <div className="space-y-2 p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-white/10 backdrop-blur-sm">
+                    <Label htmlFor="dm-model" className="text-sm font-medium glass-text-primary">Realtime model</Label>
                     {(() => {
                       const recommended = ['gpt-realtime'];
                       const known = [
@@ -267,11 +275,11 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
 
               {/* Device Settings */}
               <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Device Settings</h3>
+                <h3 className="text-lg font-semibold glass-text-primary">Device Settings</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Output */}
-                  <div className="space-y-2 p-4 rounded-lg border bg-background/50">
-                    <Label htmlFor="dm-output" className="text-sm font-medium">Audio output (Bluetooth / speakers)</Label>
+                  <div className="space-y-2 p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-white/10 backdrop-blur-sm">
+                    <Label htmlFor="dm-output" className="text-sm font-medium glass-text-primary">Audio output (Bluetooth / speakers)</Label>
                     <Select value={settings.audioOutputDeviceId || 'default'} onValueChange={(v) => update({ audioOutputDeviceId: v || 'default' })}>
                       <SelectTrigger id="dm-output">
                         <SelectValue placeholder="System default" />
@@ -286,19 +294,19 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
                       </SelectContent>
                     </Select>
                     <div className="flex gap-2 mt-2">
-                      <Button type="button" variant="outline" size="sm" onClick={handleSystemOutputPicker}>
+                      <Button type="button" variant="outline" size="sm" onClick={handleSystemOutputPicker} className="glass-small glass-text-primary border-white/20 dark:border-white/10 bg-white/30 dark:bg-white/10 hover:bg-white/40 dark:hover:bg-white/15">
                         Choose from system…
                       </Button>
-                      <Button type="button" size="sm" onClick={handleTestOutput} disabled={isTesting}>
+                      <Button type="button" variant="glass" size="sm" onClick={handleTestOutput} disabled={isTesting} className="glass-small glass-interactive glass-text-primary">
                         {isTesting ? 'Testing…' : 'Test output'}
                       </Button>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-2">Tip: Pair your car/Bluetooth headset, then select it here. On some mobile browsers, output selection must be done via the system UI.</p>
+                    <p className="text-xs glass-text-secondary mt-2">Tip: Pair your car/Bluetooth headset, then select it here. On some mobile browsers, output selection must be done via the system UI.</p>
                   </div>
 
                   {/* Input */}
-                  <div className="space-y-2 p-4 rounded-lg border bg-background/50">
-                    <Label htmlFor="dm-input" className="text-sm font-medium">Microphone input (Bluetooth / built‑in)</Label>
+                  <div className="space-y-2 p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-white/10 backdrop-blur-sm">
+                    <Label htmlFor="dm-input" className="text-sm font-medium glass-text-primary">Microphone input (Bluetooth / built‑in)</Label>
                     <Select value={settings.audioInputDeviceId || 'default'} onValueChange={(v) => update({ audioInputDeviceId: v || 'default' })}>
                       <SelectTrigger id="dm-input">
                         <SelectValue placeholder="System default" />
@@ -312,38 +320,38 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
                           ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-muted-foreground mt-2">If mics are unnamed, grant mic permission first so labels populate.</p>
+                    <p className="text-xs glass-text-secondary mt-2">If mics are unnamed, grant mic permission first so labels populate.</p>
                   </div>
                 </div>
               </div>
 
               {/* Behavior Settings */}
               <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Behavior Settings</h3>
+                <h3 className="text-lg font-semibold glass-text-primary">Behavior Settings</h3>
                 <div className="space-y-3">
                   {/* Barge-in */}
-                  <div className="flex items-center justify-between p-4 rounded-lg border bg-background/50">
+                  <div className="flex items-center justify-between p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-white/10 backdrop-blur-sm">
                     <div className="space-y-0.5">
-                      <Label className="text-sm font-medium">Barge‑in</Label>
-                      <p className="text-xs text-muted-foreground">Interrupt assistant by speaking</p>
+                      <Label className="text-sm font-medium glass-text-primary">Barge‑in</Label>
+                      <p className="text-xs glass-text-secondary">Interrupt assistant by speaking</p>
                     </div>
                     <Switch checked={settings.bargeInEnabled} onCheckedChange={(v) => update({ bargeInEnabled: !!v })} />
                   </div>
 
                   {/* Voice Stop intent */}
-                  <div className="flex items-center justify-between p-4 rounded-lg border bg-background/50">
+                  <div className="flex items-center justify-between p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-white/10 backdrop-blur-sm">
                     <div className="space-y-0.5">
-                      <Label className="text-sm font-medium">Voice Stop intent</Label>
-                      <p className="text-xs text-muted-foreground">Say &ldquo;Stop&rdquo; to end Drive Mode</p>
+                      <Label className="text-sm font-medium glass-text-primary">Voice Stop intent</Label>
+                      <p className="text-xs glass-text-secondary">Say &ldquo;Stop&rdquo; to end Drive Mode</p>
                     </div>
                     <Switch checked={settings.stopIntentEnabled} onCheckedChange={(v) => update({ stopIntentEnabled: !!v })} />
                   </div>
 
                   {/* Keep screen awake */}
-                  <div className="flex items-center justify-between p-4 rounded-lg border bg-background/50">
+                  <div className="flex items-center justify-between p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-white/10 backdrop-blur-sm">
                     <div className="space-y-0.5">
-                      <Label className="text-sm font-medium">Keep screen awake</Label>
-                      <p className="text-xs text-muted-foreground">Use Wake Lock when available</p>
+                      <Label className="text-sm font-medium glass-text-primary">Keep screen awake</Label>
+                      <p className="text-xs glass-text-secondary">Use Wake Lock when available</p>
                     </div>
                     <Switch checked={settings.wakeLockEnabled} onCheckedChange={(v) => update({ wakeLockEnabled: !!v })} />
                   </div>
@@ -356,13 +364,14 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
         
         {/* Footer */}
         <DialogFooterGlass>
-          <Button 
-            variant="glass" 
-            onClick={() => {}}
-            className="glass-small glass-interactive px-6 rounded-xl"
-          >
-            Close
-          </Button>
+          <DialogClose asChild>
+            <Button 
+              variant="glass" 
+              className="glass-small glass-interactive px-6 rounded-xl glass-text-primary"
+            >
+              Close
+            </Button>
+          </DialogClose>
         </DialogFooterGlass>
       </DialogContentGlass>
     </Dialog>

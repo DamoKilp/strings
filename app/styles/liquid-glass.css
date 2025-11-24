@@ -64,7 +64,7 @@
 }
 
 .dark .glass-text-primary {
-  color: rgba(248, 250, 252, 0.95);
+  color: rgba(255, 255, 255, 0.98);
 }
 
 .glass-text-secondary {
@@ -72,7 +72,7 @@
 }
 
 .dark .glass-text-secondary {
-  color: rgba(226, 232, 240, 0.8);
+  color: rgba(241, 245, 249, 0.9);
 }
 
 .glass-text-tertiary {
@@ -80,7 +80,7 @@
 }
 
 .dark .glass-text-tertiary {
-  color: rgba(203, 213, 225, 0.6);
+  color: rgba(226, 232, 240, 0.8);
 }
 
 /* Glass interactive elements */
@@ -163,7 +163,7 @@
 .dark .glass-dialog-scope .switch {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.16);
-  color: rgba(248, 250, 252, 0.96);
+  color: rgba(255, 255, 255, 0.98);
 }
 
 .glass-dialog-scope input::placeholder,
@@ -178,7 +178,7 @@
 
 /* Labels */
 .glass-dialog-scope label { color: rgba(15, 23, 42, 0.9); }
-.dark .glass-dialog-scope label { color: rgba(226, 232, 240, 0.92); }
+.dark .glass-dialog-scope label { color: rgba(255, 255, 255, 0.98); }
 
 /* Badges */
 .glass-dialog-scope .badge {
@@ -196,6 +196,117 @@
 .glass-dialog-scope [data-radix-select-content] .radix-select-item,
 .glass-dialog-scope [data-radix-select-content] [data-highlighted] {
   backdrop-filter: blur(8px);
+}
+
+/* Select trigger styling in glass dialogs - better contrast */
+/* Override Tailwind classes with higher specificity */
+.glass-dialog-scope button[data-radix-select-trigger],
+.glass-dialog-scope [data-radix-select-trigger] {
+  background: rgba(255, 255, 255, 0.15) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  color: rgba(15, 23, 42, 0.95) !important;
+}
+
+.dark .glass-dialog-scope button[data-radix-select-trigger],
+.dark .glass-dialog-scope [data-radix-select-trigger] {
+  background: rgba(30, 41, 59, 0.8) !important;
+  border-color: rgba(71, 85, 105, 0.6) !important;
+  color: rgba(255, 255, 255, 0.98) !important;
+}
+
+/* Override Tailwind text color classes - target all possible combinations */
+.dark .glass-dialog-scope button[data-radix-select-trigger],
+.dark .glass-dialog-scope [data-radix-select-trigger],
+.dark .glass-dialog-scope button[data-radix-select-trigger].text-slate-900,
+.dark .glass-dialog-scope button[data-radix-select-trigger].dark\:text-slate-100,
+.dark .glass-dialog-scope [data-radix-select-trigger].text-slate-900,
+.dark .glass-dialog-scope [data-radix-select-trigger].dark\:text-slate-100 {
+  color: rgba(255, 255, 255, 0.98) !important;
+}
+
+/* Override Tailwind background classes */
+.dark .glass-dialog-scope button[data-radix-select-trigger].bg-white\/10,
+.dark .glass-dialog-scope button[data-radix-select-trigger].dark\:bg-slate-800,
+.dark .glass-dialog-scope [data-radix-select-trigger].bg-white\/10,
+.dark .glass-dialog-scope [data-radix-select-trigger].dark\:bg-slate-800 {
+  background: rgba(30, 41, 59, 0.8) !important;
+}
+
+/* Override Tailwind border classes */
+.dark .glass-dialog-scope button[data-radix-select-trigger].border-slate-300,
+.dark .glass-dialog-scope button[data-radix-select-trigger].dark\:border-slate-600,
+.dark .glass-dialog-scope [data-radix-select-trigger].border-slate-300,
+.dark .glass-dialog-scope [data-radix-select-trigger].dark\:border-slate-600 {
+  border-color: rgba(71, 85, 105, 0.6) !important;
+}
+
+.glass-dialog-scope button[data-radix-select-trigger]:hover,
+.glass-dialog-scope [data-radix-select-trigger]:hover {
+  background: rgba(255, 255, 255, 0.20) !important;
+  border-color: rgba(255, 255, 255, 0.30) !important;
+}
+
+.dark .glass-dialog-scope button[data-radix-select-trigger]:hover,
+.dark .glass-dialog-scope [data-radix-select-trigger]:hover {
+  background: rgba(51, 65, 85, 0.9) !important;
+  border-color: rgba(100, 116, 139, 0.7) !important;
+}
+
+.glass-dialog-scope button[data-radix-select-trigger]:focus,
+.glass-dialog-scope [data-radix-select-trigger]:focus {
+  background: rgba(255, 255, 255, 0.25) !important;
+  border-color: rgba(99, 102, 241, 0.5) !important;
+  outline: 2px solid rgba(99, 102, 241, 0.3) !important;
+  outline-offset: 2px !important;
+}
+
+.dark .glass-dialog-scope button[data-radix-select-trigger]:focus,
+.dark .glass-dialog-scope [data-radix-select-trigger]:focus {
+  background: rgba(71, 85, 105, 0.95) !important;
+  border-color: rgba(139, 92, 246, 0.6) !important;
+  outline: 2px solid rgba(139, 92, 246, 0.4) !important;
+}
+
+/* Ensure SelectContent (dropdown) is dark in dark mode */
+.dark .glass-dialog-scope [data-radix-select-content],
+.dark .glass-dialog-scope div[data-radix-select-content] {
+  background: rgb(30, 41, 59) !important;
+  border-color: rgba(71, 85, 105, 0.8) !important;
+  color: rgba(255, 255, 255, 0.98) !important;
+}
+
+/* Override Tailwind classes in SelectContent */
+.dark .glass-dialog-scope [data-radix-select-content].bg-white,
+.dark .glass-dialog-scope [data-radix-select-content].dark\:bg-slate-800,
+.dark .glass-dialog-scope [data-radix-select-content].text-slate-900,
+.dark .glass-dialog-scope [data-radix-select-content].dark\:text-slate-100 {
+  background: rgb(30, 41, 59) !important;
+  color: rgba(255, 255, 255, 0.98) !important;
+}
+
+.dark .glass-dialog-scope [data-radix-select-content] [data-radix-select-item],
+.dark .glass-dialog-scope [data-radix-select-content] div[data-radix-select-item] {
+  color: rgba(255, 255, 255, 0.98) !important;
+}
+
+/* Override Tailwind text color in SelectItem */
+.dark .glass-dialog-scope [data-radix-select-content] [data-radix-select-item].text-slate-900,
+.dark .glass-dialog-scope [data-radix-select-content] [data-radix-select-item].dark\:text-slate-100 {
+  color: rgba(255, 255, 255, 0.98) !important;
+}
+
+.dark .glass-dialog-scope [data-radix-select-content] [data-radix-select-item][data-highlighted],
+.dark .glass-dialog-scope [data-radix-select-content] [data-radix-select-item]:hover {
+  background: rgba(51, 65, 85, 0.9) !important;
+  color: rgba(255, 255, 255, 1) !important;
+}
+
+/* Override hover background colors */
+.dark .glass-dialog-scope [data-radix-select-content] [data-radix-select-item].focus\:bg-slate-100,
+.dark .glass-dialog-scope [data-radix-select-content] [data-radix-select-item].dark\:focus\:bg-slate-700,
+.dark .glass-dialog-scope [data-radix-select-content] [data-radix-select-item].data-\[highlighted\]\:bg-slate-100,
+.dark .glass-dialog-scope [data-radix-select-content] [data-radix-select-item].dark\:data-\[highlighted\]\:bg-slate-700 {
+  background: rgba(51, 65, 85, 0.9) !important;
 }
 
 /* Tabs Glass - Dark mode text colors */

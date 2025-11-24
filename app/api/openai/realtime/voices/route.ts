@@ -3,8 +3,11 @@ import { NextRequest, NextResponse } from 'next/server'
 export const runtime = 'nodejs'
 
 // Candidate voices (keep in sync with client list)
+// Standard voices: alloy, ash, ballad, coral, echo, sage, shimmer, verse
 const CANDIDATE_VOICES = [
-  'verse','alloy','aria','amber','breeze','cobalt','coral','charlie','opal','onyx','pearl','sage','nova','marin','cedar'
+  'alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', // Standard voices
+  'aria', 'amber', 'breeze', 'cobalt', 'charlie', 'opal', 'onyx', 'pearl', 'nova', // Additional voices
+  'marin', 'cedar' // New high-naturalness voices
 ]
 
 type CacheEntry = { voices: string[]; ts: number }

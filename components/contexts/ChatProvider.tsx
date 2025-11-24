@@ -163,6 +163,7 @@ export async function generateTitleFromMessage(text: string): Promise<string> {
 // --- ADDED: Import pre-prompt helpers ---
 import { getPrePromptById, getDefaultPrePrompt, DOCUMENT_FIRST_POLICY, TOOL_USE_PREPROMPT, sanitizePromptContent } from '@/components/data/prePrompts';
 import type { AgentDefinition, AgentPreference } from '@/lib/types';
+import { MemoryService } from '@/lib/memoryService';
 // --------------------------------------
 
 // --- Helper function moved outside component ---
@@ -1166,6 +1167,18 @@ export function ChatProvider({ children }: ChatProviderProps) {
         systemPromptContent = getDefaultPrePrompt().content;
         _selectedPromptName = getDefaultPrePrompt().name;
       }
+    }
+
+    // --- Fetch and append memories to system prompt ---
+    try {
+      const memories = await MemoryService.getMemories({ limit: 20, minImportance: 3 });
+      if (memories.length > 0) {
+        const memoriesText = MemoryService.formatMemoriesForPrompt(memories);
+        systemPromptContent = `${systemPromptContent}\n\n${memoriesText}`;
+      }
+    } catch (err) {
+      // Silently fail - memories are optional
+      console.error('[ChatProvider] Error loading memories:', err);
     }
 
     // ---------------------------------------------

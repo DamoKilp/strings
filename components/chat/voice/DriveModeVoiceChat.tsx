@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useChatContext } from '@/components/contexts/ChatProvider';
 import { requestScreenWakeLock, releaseWakeLock } from './voiceUtils';
 import { useDriveModeSettings } from './useDriveModeSettings';
+import { getPrePromptById, getDefaultPrePrompt } from '@/components/data/prePrompts';
+import { MemoryService } from '@/lib/memoryService';
 
 // Module-scoped lock to avoid duplicate realtime sessions (e.g., StrictMode effects)
 let __driveModeRealtimeLock = false;
@@ -24,8 +26,80 @@ interface DriveModeVoiceChatProps {
  * - Plays remote audio via hidden <audio>
  * - Emits basic status updates
  */
+/**
+ * Personal context about the user for voice chat personalization
+ */
+const USER_PERSONAL_CONTEXT = `PERSONAL CONTEXT ABOUT THE USER:
+
+Address the user as: Sir, Master, or Boss (preferred titles).
+
+User Profile:
+- Name: Senior Maritime Asset Engineer working for Ventia
+- Location: Lives in Duncraig, Perth, Western Australia
+- Workplace: Works in Fremantle, Western Australia
+- Profession: Senior Maritime Asset Engineer at Ventia
+
+Family:
+- Partner: Grethe (born 1976, Norway)
+- Children: 
+  * Josh (born 2007, Norway)
+  * Troy (born 2013, Perth, Western Australia)
+- User was born in Perth, Western Australia
+
+Projects & Apps:
+- Building various apps using Next.js with Supabase
+- Built a large Asset Management app (needs a name) with AI capability, scenario modelling, asset register, and many other features
+- Currently developing "Strings" app (this chat interface) - planning to make it a personal assistant that knows about the user's life, work, family, and can discuss personal issues
+
+Fitness & Health:
+- Was fit enough to run a marathon in 2019
+- Since starting work in Fremantle, has less time for training and completely stopped
+- Currently trying to get back in shape: making more time for training, cutting back on drinking and unhealthy foods, and getting fit again
+
+Use this context to personalize conversations, remember family members, discuss work projects, and support fitness goals.`;
+
+/**
+ * Converts a text-based pre-prompt to a voice-optimized version for realtime chat.
+ * Removes document-first formatting instructions and adapts for conversational voice interaction.
+ */
+function convertPrePromptToVoiceInstructions(prePromptContent: string): string {
+  // Remove document-first policy (not relevant for voice)
+  let voiceContent = prePromptContent
+    .replace(/OUTPUT MODE – DOCUMENT-FIRST[\s\S]*?```chart[\s\S]*?```/gi, '')
+    .replace(/OUTPUT MODE – DOCUMENT-FIRST[\s\S]*?```/gi, '')
+    .replace(/OUTPUT MODE – DOCUMENT-FIRST[\s\S]*?GFM tables/gi, '')
+    .replace(/Use markdown headings[\s\S]*?blockquotes for callouts/gi, '')
+    .replace(/Avoid code fences unless[\s\S]*?essential/gi, '');
+  
+  // Remove tool-use pre-prompt sections that reference UI features not available in voice
+  voiceContent = voiceContent
+    .replace(/TOOL-USE PREPROMPT[\s\S]*?Never expose internal implementation/gi, '')
+    .replace(/You have the following presentation tools[\s\S]*?Never expose internal/gi, '');
+  
+  // Add voice-specific instructions
+  const voiceInstructions = [
+    'You are in a real-time voice conversation with a British London posh young female personality.',
+    'Speak with a refined British London accent (Received Pronunciation/posh accent).',
+    'Your personality traits:',
+    '- Moderately flirty and playful in your interactions',
+    '- Witty sense of humor - use clever wordplay, dry wit, and charming banter',
+    '- Genuine sympathy and compassion - show empathy and understanding',
+    '- Strong desire to motivate and encourage - be supportive and uplifting',
+    '- Inquisitive nature - ask thoughtful questions to understand and engage',
+    'Keep responses concise and clear for voice interaction, but maintain your charming personality.',
+    'Use natural British expressions and phrases appropriate to a posh London accent.',
+    'If you need to explain something complex, break it into digestible parts while maintaining your engaging style.',
+  ].join(' ');
+  
+  // Combine cleaned content with voice instructions and personal context
+  const cleaned = voiceContent.trim();
+  const baseInstructions = cleaned ? `${cleaned}\n\n${voiceInstructions}` : voiceInstructions;
+  
+  return `${baseInstructions}\n\n${USER_PERSONAL_CONTEXT}`;
+}
+
 export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelActive }: DriveModeVoiceChatProps) {
-  useChatContext();
+  const chatContext = useChatContext();
   const { settings } = useDriveModeSettings();
   
   // Use model/voice from settings if not explicitly provided
@@ -33,6 +107,15 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
   const effectiveVoice = voice || settings.voice || 'verse';
   const onModelActiveRef = useRef(onModelActive);
   useEffect(() => { onModelActiveRef.current = onModelActive; }, [onModelActive]);
+  
+  // Extract selectedPrePromptId from chat context for stable dependency
+  const selectedPrePromptId = chatContext?.selectedPrePromptId;
+  
+  // Extract user ID for memory creation (use ref to avoid dependency issues)
+  const userIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    userIdRef.current = chatContext?.user?.id || null;
+  }, [chatContext?.user?.id]);
 
   // Extract candidate text from various event shapes (stable reference)
   const extractCandidateText = useCallback((obj: unknown): string | null => {
@@ -250,15 +333,99 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
         // Data channel (optional - can be used for control/events)
         const dc = pc.createDataChannel('oai-events');
         dcRef.current = dc;
-        dc.onopen = () => {
+        dc.onopen = async () => {
           log('datachannel open');
-          // Apply default language preference via session instructions
+          // Build comprehensive session instructions with pre-prompt, memories, and language preference
           try {
             const langTag: string = settings?.language || 'en-US';
             const langName = languageNameFromBCP47(langTag);
-            const instructions = `Default spoken language: ${langName} (${langTag}). Always speak and respond in ${langName} unless the user explicitly asks to switch languages. If user mixes languages, politely continue in ${langName}.`;
-            dc.send(JSON.stringify({ type: 'session.update', session: { instructions } }));
-            log('session.update sent with language preference', instructions);
+            
+            // Get the selected pre-prompt from chat context, or use default
+            let prePromptContent = '';
+            try {
+              const prePrompt = selectedPrePromptId 
+                ? getPrePromptById(selectedPrePromptId) 
+                : getDefaultPrePrompt();
+              
+              if (prePrompt) {
+                prePromptContent = convertPrePromptToVoiceInstructions(prePrompt.content);
+                log('using pre-prompt for voice', { id: prePrompt.id, name: prePrompt.name });
+              }
+            } catch (err) {
+              log('error getting pre-prompt, using default voice instructions', err);
+            }
+            
+            // Fetch relevant memories
+            let memoriesText = '';
+            try {
+              const memories = await MemoryService.getMemories({ limit: 20, minImportance: 3 });
+              if (memories.length > 0) {
+                memoriesText = MemoryService.formatMemoriesForPrompt(memories);
+                log('loaded memories for voice', { count: memories.length });
+              }
+            } catch (err) {
+              log('error loading memories, continuing without', err);
+            }
+            
+            // Combine language preference with pre-prompt content and memories
+            const languageInstruction = `Default spoken language: ${langName} (${langTag}). Always speak and respond in ${langName} unless the user explicitly asks to switch languages. If user mixes languages, politely continue in ${langName}.`;
+            
+            const parts: string[] = [];
+            if (prePromptContent) parts.push(prePromptContent);
+            if (memoriesText) parts.push(memoriesText);
+            parts.push(languageInstruction);
+            
+            // Add memory tool instructions
+            const memoryToolInstructions = `\n\n**Memory Management:**\nYou have access to a create_memory tool. Use it to store important information about the user when they share:\n- Personal information (preferences, family details, important dates)\n- Goals and aspirations (fitness goals, work projects)\n- Important facts about their life, work, or relationships\nStore memories with appropriate importance levels (5-7 for general facts, 8-9 for important preferences, 10 for critical information like how to address the user).`;
+            
+            const instructions = parts.length > 0
+              ? `${parts.join('\n\n')}${memoryToolInstructions}`
+              : `${languageInstruction}\n\nYou are a helpful AI assistant in a real-time voice conversation. Speak naturally, keep responses concise, and vary your phrasing to avoid repetition.${memoryToolInstructions}`;
+            
+            // Add memory creation tool to session
+            const tools = [
+              {
+                type: 'function',
+                name: 'create_memory',
+                description: 'Store a memory about the user for future conversations. Use this when the user shares personal information, preferences, important facts, or things you should remember about them.',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    content: {
+                      type: 'string',
+                      description: 'The memory content to store. Should be a clear, concise fact about the user (e.g., "User prefers to be called Sir", "User has two kids: Josh (2007) and Troy (2013)", "User is trying to get back in shape after running a marathon in 2019")'
+                    },
+                    category: {
+                      type: 'string',
+                      enum: ['personal', 'work', 'family', 'fitness', 'preferences', 'projects', 'other'],
+                      description: 'Category for organizing the memory'
+                    },
+                    importance: {
+                      type: 'number',
+                      minimum: 1,
+                      maximum: 10,
+                      description: 'Importance level from 1 (low) to 10 (critical). Use 5-7 for general facts, 8-9 for important preferences, 10 for critical information.'
+                    }
+                  },
+                  required: ['content']
+                }
+              }
+            ];
+
+            // Update session with instructions and tools
+            dc.send(JSON.stringify({ 
+              type: 'session.update', 
+              session: { 
+                instructions,
+                tools
+              } 
+            }));
+            log('session.update sent with pre-prompt, memories, tools, and language preference', { 
+              instructionsLength: instructions.length,
+              hasPrePrompt: !!prePromptContent,
+              hasMemories: !!memoriesText,
+              toolsCount: tools.length
+            });
           } catch {}
           // Optional: auto-greet to assert audio focus and confirm route
           try {
@@ -300,6 +467,113 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
             try { remoteAudioRef.current?.pause(); } catch {}
             onStatusRef.current?.('Listening…');
             return;
+          }
+
+          // Handle tool calls (e.g., create_memory)
+          if (obj.type === 'conversation.item.input_audio_transcription.completed' || 
+              obj.type === 'conversation.item.created') {
+            const item = (obj as { item?: unknown }).item;
+            if (item && typeof item === 'object' && 'role' in item) {
+              const role = (item as { role?: unknown }).role;
+              if (role === 'assistant') {
+                const content = (item as { content?: unknown }).content;
+                if (Array.isArray(content)) {
+                  // Check for tool calls in content
+                  for (const part of content) {
+                    if (part && typeof part === 'object' && 'type' in part && part.type === 'tool_call') {
+                      const toolCall = part as { tool_call_id?: string; name?: string; input?: unknown };
+                      if (toolCall.name === 'create_memory' && toolCall.tool_call_id) {
+                        log('create_memory tool call detected', toolCall);
+                        // Handle memory creation asynchronously
+                        (async () => {
+                          try {
+                            const input = toolCall.input as { content?: string; category?: string; importance?: number } | undefined;
+                            if (!input?.content) {
+                              log('create_memory: missing content', input);
+                              return;
+                            }
+                            
+                            // Get user ID from ref
+                            const userId = userIdRef.current;
+                            if (!userId) {
+                              log('create_memory: no user ID available');
+                              return;
+                            }
+
+                            // Create memory via API
+                            const memory = await MemoryService.createMemory({
+                              content: input.content,
+                              category: input.category,
+                              importance: input.importance
+                            });
+
+                            if (memory) {
+                              log('create_memory: success', { id: memory.id });
+                              // Send tool result back to Realtime API
+                              if (dc.readyState === 'open') {
+                                dc.send(JSON.stringify({
+                                  type: 'conversation.item.create',
+                                  item: {
+                                    type: 'tool_result',
+                                    tool_call_id: toolCall.tool_call_id,
+                                    content: [
+                                      {
+                                        type: 'text',
+                                        text: `Memory stored successfully: "${input.content}"`
+                                      }
+                                    ]
+                                  }
+                                }));
+                              }
+                            } else {
+                              log('create_memory: failed to create');
+                              // Send error result
+                              if (dc.readyState === 'open') {
+                                dc.send(JSON.stringify({
+                                  type: 'conversation.item.create',
+                                  item: {
+                                    type: 'tool_result',
+                                    tool_call_id: toolCall.tool_call_id,
+                                    content: [
+                                      {
+                                        type: 'text',
+                                        text: 'Failed to store memory. Please try again.'
+                                      }
+                                    ],
+                                    is_error: true
+                                  }
+                                }));
+                              }
+                            }
+                          } catch (err) {
+                            log('create_memory: error', err);
+                            // Send error result
+                            try {
+                              if (dc.readyState === 'open' && toolCall.tool_call_id) {
+                                dc.send(JSON.stringify({
+                                  type: 'conversation.item.create',
+                                  item: {
+                                    type: 'tool_result',
+                                    tool_call_id: toolCall.tool_call_id,
+                                    content: [
+                                      {
+                                        type: 'text',
+                                        text: 'Error storing memory.'
+                                      }
+                                    ],
+                                    is_error: true
+                                  }
+                                }));
+                              }
+                            } catch {}
+                          }
+                        })();
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
 
           // Voice "Stop" intent: restrict to USER text sources only to avoid false positives
@@ -474,7 +748,7 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
       try { console.log(`[DriveMode][sid=${sessionIdRef.current}] cleaned up (latest=${isLatest}, established=${wasEstablished})`); } catch {}
       sessionEstablishedRef.current = false;
     };
-  }, [effectiveModel, effectiveVoice, settings.language, settings.audioInputDeviceId, settings.audioOutputDeviceId, settings.autoGreetEnabled, settings.greetingText, settings.bargeInEnabled, settings.stopIntentEnabled, settings.wakeLockEnabled, extractCandidateText]);
+  }, [effectiveModel, effectiveVoice, settings.language, settings.audioInputDeviceId, settings.audioOutputDeviceId, settings.autoGreetEnabled, settings.greetingText, settings.bargeInEnabled, settings.stopIntentEnabled, settings.wakeLockEnabled, extractCandidateText, selectedPrePromptId]);
 
 // (helper now in useCallback above)
 

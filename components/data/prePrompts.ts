@@ -120,6 +120,20 @@ export const TOOL_USE_PREPROMPT = [
   '   - Use clear headings and compact bullets. Keep language precise and neutral.',
   '   - Avoid overwhelming long dumps; summarize and offer "show details" if needed.',
   '',
+  '7) Memory Management (create_memory tool):',
+  '   - You have access to a create_memory tool that allows you to store important information about the user for future conversations.',
+  '   - Use this tool when the user shares:',
+  '     * Personal information (name preferences, family details, important dates)',
+  '     * Preferences (how they like to be addressed, communication style, work habits)',
+  '     * Goals and aspirations (fitness goals, work projects, personal objectives)',
+  '     * Important facts about their life, work, or relationships',
+  '   - Store memories with appropriate importance levels:',
+  '     * 5-7: General facts and preferences',
+  '     * 8-9: Important preferences and recurring themes',
+  '     * 10: Critical information (e.g., how to address the user, major life events)',
+  '   - Use clear, concise memory content that will be useful in future conversations.',
+  '   - Do not store trivial or temporary information.',
+  '',
   'Never expose internal implementation details, servers, or database calls. Do not claim capabilities the UI does not provide.'
 ].join('\n');
 
