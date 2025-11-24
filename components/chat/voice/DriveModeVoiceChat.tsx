@@ -677,8 +677,7 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
               const itemObj = item as Record<string, unknown>;
               if (itemObj.type === 'function_call' && itemObj.call_id) {
                 const callId = itemObj.call_id as string;
-                const functionName = itemObj.name as string | undefined;
-                console.log('[DriveMode] Function call added to response, call_id:', callId, 'name:', functionName);
+                console.log('[DriveMode] Function call added to response, call_id:', callId);
                 sendPendingToolResult(callId);
               }
             }
@@ -692,9 +691,10 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
               console.log('[DriveMode] Function call arguments done, call_id:', callId, 'name:', functionName);
               
               // For web_search, send placeholder immediately when arguments are done
-              // This is the same timing as other tools, but we'll update it with real results
+              // This is the same timing as other tools send their results
+              // We'll update it with real results when search completes
               if (functionName === 'web_search' && !placeholderSentRef.current.has(callId)) {
-                console.log('[DriveMode] 🚀 Sending placeholder for web_search (arguments done)');
+                console.log('[DriveMode] 🚀 Sending placeholder for web_search (arguments done, same timing as other tools)');
                 sendWebSearchPlaceholder(callId);
               }
               
