@@ -424,7 +424,9 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
               instructionsLength: instructions.length,
               hasPrePrompt: !!prePromptContent,
               hasMemories: !!memoriesText,
-              toolsCount: tools.length
+              toolsCount: tools.length,
+              tools: JSON.stringify(tools),
+              userId: userIdRef.current
             });
           } catch {}
           // Optional: auto-greet to assert audio focus and confirm route
@@ -440,11 +442,16 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
         };
         dc.onmessage = (ev) => {
           const raw = typeof ev.data === 'string' ? ev.data : '';
-          log('datachannel message', raw.slice(0, 200));
+          log('datachannel message', raw.slice(0, 500)); // Increased log length to see tool calls
           // Attempt to parse event JSON
           let obj: Record<string, unknown> | null = null;
           try { obj = JSON.parse(raw) as Record<string, unknown>; } catch {}
           if (!obj || typeof obj !== 'object') return;
+          
+          // Log all event types to debug tool calls
+          if (obj.type && typeof obj.type === 'string') {
+            log('Realtime API event type:', obj.type);
+          }
 
           // Track assistant audio lifecycle based on events
           if (obj.type === 'output_audio_buffer.started') {
@@ -470,6 +477,163 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
           }
 
           // Handle tool calls (e.g., create_memory)
+          // Tool calls can appear in various event types - check multiple locations
+          const checkForToolCalls = (data: Record<string, unknown>, path = 'root'): void => {
+            // Check if this object itself is a tool call
+            if (data.type === 'tool_call' || data.type === 'function_call') {
+              const toolCall = data as { tool_call_id?: string; name?: string; input?: unknown; function_call_id?: string; function?: { name?: string; arguments?: string } };
+              const toolName = toolCall.name || toolCall.function?.name;
+              const toolCallId = toolCall.tool_call_id || toolCall.function_call_id;
+              const input = toolCall.input || (toolCall.function?.arguments ? JSON.parse(toolCall.function.arguments) : undefined);
+              
+              if (toolName === 'create_memory' && toolCallId) {
+                log('create_memory tool call detected at path:', path, { toolCallId, input });
+                handleMemoryCreation(toolCallId, input);
+                return;
+              }
+            }
+            
+            // Recursively check nested objects and arrays
+            for (const [key, value] of Object.entries(data)) {
+              if (value && typeof value === 'object') {
+                if (Array.isArray(value)) {
+                  value.forEach((item, idx) => {
+                    if (item && typeof item === 'object') {
+                      checkForToolCalls(item as Record<string, unknown>, `${path}.${key}[${idx}]`);
+                    }
+                  });
+                } else {
+                  checkForToolCalls(value as Record<string, unknown>, `${path}.${key}`);
+                }
+              }
+            }
+          };
+          
+          const handleMemoryCreation = async (toolCallId: string, input: unknown) => {
+            try {
+              const memoryInput = input as { content?: string; category?: string; importance?: number } | undefined;
+              if (!memoryInput?.content) {
+                log('create_memory: missing content', memoryInput);
+                return;
+              }
+              
+              // Get user ID from ref
+              const userId = userIdRef.current;
+              if (!userId) {
+                log('create_memory: no user ID available');
+                return;
+              }
+
+              log('Creating memory with input:', memoryInput);
+              
+              // Create memory via API
+              const memory = await MemoryService.createMemory({
+                content: memoryInput.content,
+                category: memoryInput.category,
+                importance: memoryInput.importance
+              });
+
+              if (memory) {
+                log('create_memory: success', { id: memory.id });
+                // Send tool result back to Realtime API
+                if (dc.readyState === 'open') {
+                  dc.send(JSON.stringify({
+                    type: 'conversation.item.create',
+                    item: {
+                      type: 'tool_result',
+                      tool_call_id: toolCallId,
+                      content: [
+                        {
+                          type: 'text',
+                          text: `Memory stored successfully: "${memoryInput.content}"`
+                        }
+                      ]
+                    }
+                  }));
+                  log('Sent tool result to Realtime API');
+                }
+              } else {
+                log('create_memory: failed to create');
+                // Send error result
+                if (dc.readyState === 'open') {
+                  dc.send(JSON.stringify({
+                    type: 'conversation.item.create',
+                    item: {
+                      type: 'tool_result',
+                      tool_call_id: toolCallId,
+                      content: [
+                        {
+                          type: 'text',
+                          text: 'Failed to store memory. Please try again.'
+                        }
+                      ],
+                      is_error: true
+                    }
+                  }));
+                }
+              }
+            } catch (err) {
+              log('create_memory: error', err);
+              // Send error result
+              try {
+                if (dc.readyState === 'open') {
+                  dc.send(JSON.stringify({
+                    type: 'conversation.item.create',
+                    item: {
+                      type: 'tool_result',
+                      tool_call_id: toolCallId,
+                      content: [
+                        {
+                          type: 'text',
+                          text: 'Error storing memory.'
+                        }
+                      ],
+                      is_error: true
+                    }
+                  }));
+                }
+              } catch {}
+            }
+          };
+          
+          // Check for tool calls in the entire event object
+          checkForToolCalls(obj);
+          
+          // Also check specific event types that commonly contain tool calls
+          if (obj.type === 'conversation.item.input_audio_transcription.completed' || 
+              obj.type === 'conversation.item.created' ||
+              obj.type === 'response.output_item.done' ||
+              obj.type === 'response.done' ||
+              obj.type === 'response.created') {
+            const item = (obj as { item?: unknown; response?: { item?: unknown } }).item || 
+                        ((obj as { response?: { item?: unknown } }).response?.item);
+            if (item && typeof item === 'object' && 'role' in item) {
+              const role = (item as { role?: unknown }).role;
+              if (role === 'assistant') {
+                const content = (item as { content?: unknown }).content;
+                if (Array.isArray(content)) {
+                  // Check for tool calls in content
+                  for (const part of content) {
+                    if (part && typeof part === 'object' && 'type' in part) {
+                      if (part.type === 'tool_call' || part.type === 'function_call') {
+                        const toolCall = part as { tool_call_id?: string; name?: string; input?: unknown; function_call_id?: string; function?: { name?: string; arguments?: string } };
+                        const toolName = toolCall.name || toolCall.function?.name;
+                        const toolCallId = toolCall.tool_call_id || toolCall.function_call_id;
+                        const input = toolCall.input || (toolCall.function?.arguments ? JSON.parse(toolCall.function.arguments) : undefined);
+                        
+                        if (toolName === 'create_memory' && toolCallId) {
+                          log('create_memory tool call detected in content array', { toolCallId, input });
+                          handleMemoryCreation(toolCallId, input);
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          
+          // Legacy handler (keeping for backward compatibility)
           if (obj.type === 'conversation.item.input_audio_transcription.completed' || 
               obj.type === 'conversation.item.created') {
             const item = (obj as { item?: unknown }).item;
@@ -483,7 +647,7 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
                     if (part && typeof part === 'object' && 'type' in part && part.type === 'tool_call') {
                       const toolCall = part as { tool_call_id?: string; name?: string; input?: unknown };
                       if (toolCall.name === 'create_memory' && toolCall.tool_call_id) {
-                        log('create_memory tool call detected', toolCall);
+                        log('create_memory tool call detected (legacy handler)', toolCall);
                         // Handle memory creation asynchronously
                         (async () => {
                           try {

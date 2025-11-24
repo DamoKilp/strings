@@ -45,3 +45,4 @@ drop policy if exists memories_delete_own on public.memories;
 create policy memories_delete_own on public.memories
   for delete using (auth.uid() = user_id);
 
+
