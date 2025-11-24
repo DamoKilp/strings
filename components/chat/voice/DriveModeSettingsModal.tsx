@@ -197,7 +197,7 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
                 <h3 className="text-lg font-semibold glass-text-primary">Audio & Voice</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Language */}
-                  <div className="space-y-2 p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-white/10 backdrop-blur-sm">
+                  <div className="space-y-2 p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-slate-900/80 backdrop-blur-sm">
                     <Label htmlFor="dm-language" className="text-sm font-medium glass-text-primary">Default language (BCP‑47)</Label>
                     <Select value={settings.language} onValueChange={(v) => update({ language: v })}>
                       <SelectTrigger id="dm-language">
@@ -212,7 +212,7 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
                   </div>
 
                   {/* Voice (filtered per model) */}
-                  <div className="space-y-2 p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-white/10 backdrop-blur-sm">
+                  <div className="space-y-2 p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-slate-900/80 backdrop-blur-sm">
                     <Label htmlFor="dm-voice" className="text-sm font-medium glass-text-primary">Voice</Label>
                     <Select value={settings.voice} onValueChange={(v) => update({ voice: v })}>
                       <SelectTrigger id="dm-voice">
@@ -236,7 +236,7 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
                   </div>
 
                   {/* Model */}
-                  <div className="space-y-2 p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-white/10 backdrop-blur-sm">
+                  <div className="space-y-2 p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-slate-900/80 backdrop-blur-sm">
                     <Label htmlFor="dm-model" className="text-sm font-medium glass-text-primary">Realtime model</Label>
                     {(() => {
                       const recommended = ['gpt-realtime'];
@@ -278,7 +278,7 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
                 <h3 className="text-lg font-semibold glass-text-primary">Device Settings</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Output */}
-                  <div className="space-y-2 p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-white/10 backdrop-blur-sm">
+                  <div className="space-y-2 p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-slate-900/80 backdrop-blur-sm">
                     <Label htmlFor="dm-output" className="text-sm font-medium glass-text-primary">Audio output (Bluetooth / speakers)</Label>
                     <Select value={settings.audioOutputDeviceId || 'default'} onValueChange={(v) => update({ audioOutputDeviceId: v || 'default' })}>
                       <SelectTrigger id="dm-output">
@@ -305,7 +305,7 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
                   </div>
 
                   {/* Input */}
-                  <div className="space-y-2 p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-white/10 backdrop-blur-sm">
+                  <div className="space-y-2 p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-slate-900/80 backdrop-blur-sm">
                     <Label htmlFor="dm-input" className="text-sm font-medium glass-text-primary">Microphone input (Bluetooth / built‑in)</Label>
                     <Select value={settings.audioInputDeviceId || 'default'} onValueChange={(v) => update({ audioInputDeviceId: v || 'default' })}>
                       <SelectTrigger id="dm-input">
@@ -330,7 +330,7 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
                 <h3 className="text-lg font-semibold glass-text-primary">Behavior Settings</h3>
                 <div className="space-y-3">
                   {/* Barge-in */}
-                  <div className="flex items-center justify-between p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-white/10 backdrop-blur-sm">
+                  <div className="flex items-center justify-between p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-slate-900/80 backdrop-blur-sm">
                     <div className="space-y-0.5">
                       <Label className="text-sm font-medium glass-text-primary">Barge‑in</Label>
                       <p className="text-xs glass-text-secondary">Interrupt assistant by speaking</p>
@@ -339,7 +339,7 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
                   </div>
 
                   {/* Voice Stop intent */}
-                  <div className="flex items-center justify-between p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-white/10 backdrop-blur-sm">
+                  <div className="flex items-center justify-between p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-slate-900/80 backdrop-blur-sm">
                     <div className="space-y-0.5">
                       <Label className="text-sm font-medium glass-text-primary">Voice Stop intent</Label>
                       <p className="text-xs glass-text-secondary">Say &ldquo;Stop&rdquo; to end Drive Mode</p>
@@ -348,7 +348,7 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
                   </div>
 
                   {/* Keep screen awake */}
-                  <div className="flex items-center justify-between p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-white/10 backdrop-blur-sm">
+                  <div className="flex items-center justify-between p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-slate-900/80 backdrop-blur-sm">
                     <div className="space-y-0.5">
                       <Label className="text-sm font-medium glass-text-primary">Keep screen awake</Label>
                       <p className="text-xs glass-text-secondary">Use Wake Lock when available</p>

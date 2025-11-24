@@ -82,6 +82,8 @@ export interface ChatInputProps {
 
 // Lazy component for Drive Mode settings (toggle UI not used here)
 const DriveModeSettingsModal = dynamic(() => import('@/components/chat/voice/DriveModeSettingsModal').then(m => m.DriveModeSettingsModal), { ssr: false });
+// Lazy component for Protocols & Memories management
+const ProtocolsMemoriesDialog = dynamic(() => import('@/components/chat/ProtocolsMemoriesDialog').then(m => m.ProtocolsMemoriesDialog), { ssr: false });
 
 export function ChatInput({
   onSubmit,
@@ -771,6 +773,20 @@ export function ChatInput({
           
           {/* Secondary Actions Group - Right Side */}
           <div className="toolbar-section secondary-section">
+              {/* Protocols & Memories Manager */}
+              <div className="toolbar-group flex items-center gap-2">
+                <TooltipProvider delayDuration={0}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <ProtocolsMemoriesDialog triggerClassName="toolbar-btn text-blue-400/80 dark:text-blue-400/80" />
+                    </TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={4} className="toolbar-tooltip !bg-slate-900 !text-slate-200 border border-slate-700 pointer-events-none">
+                      <span>Manage Protocols & Memories</span>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+
               {/* Voice/Drive Mode */}
               {showDriveMode && (
               <div className="toolbar-group flex items-center gap-2">

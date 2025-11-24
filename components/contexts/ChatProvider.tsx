@@ -268,6 +268,7 @@ function loadConversationSettings(conversationId: string, availableModels: LLMMo
 
 // --- Determine Default Model ---
 const availableModels: LLMModel[] = modelsData.models as LLMModel[];
+// Default to GPT 5.1, with fallbacks if not available
 const defaultModel =
   availableModels.find((m) => m.id === 'gpt-5.1') ||
   availableModels.find((m) => m.id === 'gpt-5') ||
@@ -1409,6 +1410,31 @@ export function ChatProvider({ children }: ChatProviderProps) {
             reasoningLevel: state.reasoningLevel,
           });
         } catch {}
+      }
+
+      // --- Parse response for memory JSON format and create memories ---
+      // The AI may output memories in JSON format when tools aren't available
+      try {
+        const memoryJsonMatch = assistantResponseContent.match(/\{"memory_to_write":\s*\{[^}]+\}\}/);
+        if (memoryJsonMatch) {
+          const memoryData = JSON.parse(memoryJsonMatch[0]);
+          if (memoryData.memory_to_write?.memory) {
+            const memoryInput = {
+              content: memoryData.memory_to_write.memory,
+              importance: memoryData.memory_to_write.importance || 5,
+              category: memoryData.memory_to_write.category || undefined
+            };
+            const createdMemory = await MemoryService.createMemory(memoryInput);
+            if (createdMemory) {
+              console.log('[ChatProvider] Created memory from JSON format:', createdMemory.id);
+              // Remove the JSON from the response content for cleaner display
+              assistantResponseContent = assistantResponseContent.replace(memoryJsonMatch[0], '').trim();
+            }
+          }
+        }
+      } catch (parseError) {
+        // Silently fail - memory parsing is optional
+        console.warn('[ChatProvider] Failed to parse memory JSON from response:', parseError);
       }
 
       abortControllerRef.current = null;
