@@ -141,28 +141,30 @@ const loadGlobalAuth = async (): Promise<AuthState> => {
   }
 
   // 🚀 SMART DETECTION: If we already have valid auth state, don't reload unnecessarily
-  if (globalAuthState.user && globalAuthState.profile && !globalAuthState.isLoading) {
-    console.log('🔍 [loadGlobalAuth] Auth state is already complete, returning cached state');
-    return {
+  // This prevents unnecessary reloads on focus/visibility changes that cause page refreshes
+  if (globalAuthState.user && globalAuthState.profile && !globalAuthState.error) {
+    // Always return with isLoading: false to prevent stuck loading states
+    // The state is already loaded, so there's no loading happening
+    const cachedState: AuthState = {
       user: globalAuthState.user,
       profile: globalAuthState.profile,
       session: globalAuthState.session,
-      isLoading: false,
+      isLoading: false, // CRITICAL: Set to false to prevent stuck loading state
       error: null,
     };
+    // Update global state to ensure isLoading is false
+    if (globalAuthState.isLoading) {
+      globalAuthState = cachedState;
+      notifyListeners();
+    }
+    return cachedState;
   }
   
-  console.log('🔍 [loadGlobalAuth] Starting auth load. Current state:', {
-    hasUser: !!globalAuthState.user,
-    hasProfile: !!globalAuthState.profile,
-    isLoading: globalAuthState.isLoading
-  });
 
   // Create new loading promise with timeout protection
   globalAuthPromise = (async (): Promise<AuthState> => {
     const startTime = Date.now();
     const loadingId = Math.random().toString(36).substr(2, 9);
-    console.log(`🔍 [loadGlobalAuth ${loadingId}] Starting unified auth loading...`);
     
       // Add timeout wrapper for stuck auth states
       const timeoutPromise = new Promise<never>((_, reject) => {
@@ -187,7 +189,7 @@ const loadGlobalAuth = async (): Promise<AuthState> => {
         
         // Check session first for debugging
         const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
-        console.log(`🔍 [useAuth ${loadingId}] Initial session check:`, {
+        if (AUTH_DEBUG || AUTH_TIMING_DEBUG) console.log(`🔐 [${loadingId}] Initial session check:`, {
           hasSession: !!initialSession,
           sessionExpiry: initialSession?.expires_at,
           sessionAccessToken: initialSession?.access_token ? 'present' : 'missing',
@@ -202,7 +204,7 @@ const loadGlobalAuth = async (): Promise<AuthState> => {
         const { data: { user }, error: userError } = await supabase.auth.getUser();
         
         const getUserDuration = Date.now() - getUserStart;
-        console.log(`🔍 [useAuth ${loadingId}] getUser() result:`, {
+        if (AUTH_DEBUG || AUTH_TIMING_DEBUG) console.log(`🔐 [${loadingId}] getUser() result:`, {
           hasUser: !!user,
           userId: user?.id,
           userEmail: user?.email,
@@ -385,10 +387,12 @@ export function useAuth(): AuthContext {
 
 
     // Initial load (only if not already loaded/loading)
+    // 🔍 CRITICAL: Don't reload if we already have valid auth state - prevents refresh on focus/remount
     // Also reload if we have no user and no promise (might be stale state)
-    if (!globalAuthPromise && (globalAuthState.isLoading || (!globalAuthState.user && !globalAuthState.isLoading))) {
-    
+    const hasValidAuth = globalAuthState.user && globalAuthState.profile && !globalAuthState.error
+    if (!globalAuthPromise && !hasValidAuth && (globalAuthState.isLoading || !globalAuthState.user)) {
       loadGlobalAuth();
+    } else if (hasValidAuth) {
     } 
 
     // Set up auth listener (only once globally; resilient to Fast Refresh/HMR)
@@ -430,7 +434,8 @@ export function useAuth(): AuthContext {
             console.error(`🔐 [${eventId}] Auth reload failed:`, error);
           }
         } else if (event === 'TOKEN_REFRESHED') {
-          // For token refresh, only reload if we don't already have a valid session
+          // 🔍 CRITICAL: Token refresh happens automatically on focus - don't reload if we already have valid auth
+          // This prevents unnecessary isLoading state changes that cause page refreshes
           if (!globalAuthState.session && session) {
             if (AUTH_DEBUG || AUTH_TIMING_DEBUG) console.log(`🔐 [${eventId}] Token refreshed and we don't have session, updating...`);
             globalAuthState = { ...globalAuthState, isLoading: true };
@@ -443,7 +448,15 @@ export function useAuth(): AuthContext {
               console.error(`🔐 [${eventId}] Auth reload failed:`, error);
             }
           } else {
-            if (AUTH_TIMING_DEBUG) console.log(`🔐 [${eventId}] Token refreshed but session already exists, skipping reload`);
+            // 🔍 CRITICAL: If we already have valid auth state, just update the session without reloading
+            // This prevents isLoading: true -> false transitions that cause visual refreshes
+            if (globalAuthState.user && globalAuthState.profile && session) {
+              if (AUTH_TIMING_DEBUG) console.log(`🔐 [${eventId}] Token refreshed, updating session only (skipping reload to prevent refresh)`);
+              globalAuthState = { ...globalAuthState, session, isLoading: false };
+              notifyListeners();
+            } else {
+              if (AUTH_TIMING_DEBUG) console.log(`🔐 [${eventId}] Token refreshed but session already exists, skipping reload`);
+            }
           }
         }
       });

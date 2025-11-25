@@ -457,36 +457,81 @@ export default function FinancePageClient({
     }
   }, [user, selectedMonthYear])
 
-  // Sync with server-side initial data
-  // Use JSON.stringify for array/object comparison to avoid infinite loops
-  // Track if we've made client-side modifications to prevent overwriting with stale server data
+  // 🚀 CRITICAL FIX: Client-side data loading for static page
+  // Since the server component is now static (to prevent refresh on focus),
+  // we always fetch data on the client. If initial data is provided (SSR fallback),
+  // we use it, otherwise we fetch on mount.
   const hasClientModifications = useRef(false)
-  // Track if we've already initialized from props to prevent resetting state on revalidation
-  const hasInitialized = useRef(false)
+  const hasLoadedData = useRef(false)
   
-  // 🚀 FIXED: Only initialize state from props on initial mount, not on prop changes from revalidation
-  // This prevents the page from resetting when Next.js revalidates on focus change
+  
+  // 🔍 CRITICAL: Persist state across remounts using sessionStorage
+  // This prevents data loss when component remounts due to server re-run
+  const STATE_KEY = 'finance_page_state'
+  
+  // Load data on mount if initial data is empty (static page scenario)
   useEffect(() => {
-    // Only initialize once on mount
-    if (hasInitialized.current) {
-      return
+    // Check if we have persisted state from a previous mount
+    if (typeof window !== 'undefined' && !hasLoadedData.current) {
+      try {
+        const persisted = sessionStorage.getItem(STATE_KEY)
+        if (persisted) {
+          const parsed = JSON.parse(persisted)
+          if (parsed.accounts) setAccounts(parsed.accounts)
+          if (parsed.bills) setBills(parsed.bills)
+          if (parsed.projections) setProjections(parsed.projections)
+          if (parsed.snapshots) setMonthlySnapshots(parsed.snapshots)
+          if (parsed.billPaymentsPaid) setBillPaymentsPaid(parsed.billPaymentsPaid)
+          if (parsed.billingPeriods) setBillingPeriods(parsed.billingPeriods)
+          hasLoadedData.current = true
+          return // Skip normal initialization if we restored state
+        }
+      } catch (e) {
+        console.error('Failed to restore persisted state:', e)
+      }
     }
     
-    setAccounts(initialAccounts)
-    setBills(initialBills)
-    // Only update projections from server if we haven't made client-side modifications
-    // This prevents overwriting client-side updates with stale server data after revalidation
-    // The projections state is managed by the add/update/delete handlers
-    if (!hasClientModifications.current || projections.length === 0) {
-      setProjections(initialProjections)
-      hasClientModifications.current = false
-    }
-    setMonthlySnapshots(initialSnapshots)
-    setBillPaymentsPaid(initialBillPaymentsPaid)
+    // If we have initial data from server, use it (but this won't happen with static page)
+    // Otherwise, fetch data on mount
+    const hasInitialData = initialAccounts.length > 0 || initialBills.length > 0
     
-    hasInitialized.current = true
+    if (hasInitialData && !hasLoadedData.current) {
+      // Use server-provided initial data (fallback for SSR)
+      setAccounts(initialAccounts)
+      setBills(initialBills)
+      if (!hasClientModifications.current || projections.length === 0) {
+        setProjections(initialProjections)
+      }
+      setMonthlySnapshots(initialSnapshots)
+      setBillPaymentsPaid(initialBillPaymentsPaid)
+      hasLoadedData.current = true
+    } else if (!hasInitialData && user && !hasLoadedData.current) {
+      // No initial data (static page) - fetch on mount
+      loadData()
+      hasLoadedData.current = true
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // Only run on mount
+  }, [user]) // Load when user is available
+  
+  // 🔍 CRITICAL: Persist state to sessionStorage whenever it changes
+  useEffect(() => {
+    if (hasLoadedData.current && accounts.length > 0) {
+      try {
+        const stateToPersist = {
+          accounts,
+          bills,
+          projections,
+          snapshots: monthlySnapshots,
+          billPaymentsPaid,
+          billingPeriods,
+          timestamp: new Date().toISOString()
+        }
+        sessionStorage.setItem(STATE_KEY, JSON.stringify(stateToPersist))
+      } catch (e) {
+        // Ignore storage errors (quota exceeded, etc.)
+      }
+    }
+  }, [accounts, bills, projections, monthlySnapshots, billPaymentsPaid, billingPeriods])
 
   // Calculate pay cycle days
   const payCycleDays = useMemo(() => {

@@ -55,7 +55,7 @@ export async function updateSession(request: NextRequest) {
     return response;
   }
 
-  const protectedRoutes = ['/', '/dashboard', '/settings'];
+  const protectedRoutes = ['/', '/dashboard', '/settings', '/finance'];
   const authRoutes = ['/sign-in', '/sign-up'];
   const publicRoutes = ['/auth/callback', '/api'];
 
