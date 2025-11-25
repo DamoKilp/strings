@@ -22,7 +22,7 @@ export function DriveModeOverlay({ visible, statusText = 'Listening…', activeM
   // Keep fetching supported voices (used by settings modal), but don't render a header dropdown
   const [_, setSupportedVoices] = React.useState<string[] | null>(null);
 
-  const effectiveModel = activeModel || settings.model || 'gpt-realtime';
+  const effectiveModel = activeModel || settings.model || 'gpt-realtime-mini';
 
   React.useEffect(() => {
     let cancelled = false;
@@ -53,12 +53,12 @@ export function DriveModeOverlay({ visible, statusText = 'Listening…', activeM
     } catch {}
   }, [settings.voice]);
   
-  // Quick model toggle between gpt-realtime and gpt-4o-realtime-preview
+  // Quick model toggle between gpt-realtime-mini and gpt-realtime
   const handleQuickModelSwitch = () => {
     const currentModel = activeModel || settings.model;
-    const newModel = currentModel === 'gpt-realtime' 
-      ? 'gpt-4o-realtime-preview' 
-      : 'gpt-realtime';
+    const newModel = currentModel === 'gpt-realtime-mini' 
+      ? 'gpt-realtime' 
+      : 'gpt-realtime-mini';
     
     update({ model: newModel });
     onModelSwitch?.(); // Notify parent to restart session with new model
@@ -83,7 +83,7 @@ export function DriveModeOverlay({ visible, statusText = 'Listening…', activeM
                 </h2>
                 {/* Active model display */}
                 <div className="text-lg sm:text-xl font-bold text-white/90 mt-1">
-                  {activeModel || settings.model || 'gpt-realtime'}
+                  {activeModel || settings.model || 'gpt-realtime-mini'}
                 </div>
               </div>
             <div className="flex items-center gap-2">
@@ -98,7 +98,7 @@ export function DriveModeOverlay({ visible, statusText = 'Listening…', activeM
                   size="sm"
                   onClick={handleQuickModelSwitch}
                   className="hidden sm:inline-flex border-purple-500/30 bg-purple-900/20 text-purple-200 hover:text-purple-100 hover:bg-purple-900/30"
-                  title="Switch between gpt-realtime and gpt-4o-realtime-preview"
+                  title="Switch between gpt-realtime-mini and gpt-realtime"
                 >
                   <RotateCcw className="h-4 w-4 mr-1" />
                   Switch

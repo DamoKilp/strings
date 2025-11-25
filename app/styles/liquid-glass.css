@@ -179,6 +179,8 @@
 /* Labels */
 .glass-dialog-scope label { color: rgba(15, 23, 42, 0.9); }
 .dark .glass-dialog-scope label { color: rgba(255, 255, 255, 0.98); }
+/* Override for Drive Mode Settings dialog labels */
+.dark .glass-dialog-scope label[style*="color"] { color: rgb(15, 23, 42) !important; }
 
 /* Badges */
 .glass-dialog-scope .badge {

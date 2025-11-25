@@ -12,7 +12,8 @@ export async function POST(req: NextRequest) {
     const { model, voice } = await req.json().catch(() => ({ })) as { model?: string; voice?: string }
 
     // Minimal validation and safe defaults
-    const effectiveModel = (model || '').trim() || 'gpt-realtime'
+    // Default to gpt-realtime-mini (cost-efficient: 32K context, 4K max output tokens)
+    const effectiveModel = (model || '').trim() || 'gpt-realtime-mini'
     const effectiveVoice = (voice || '').trim() || 'coral'
 
     const body = {

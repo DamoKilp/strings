@@ -103,7 +103,7 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
   const { settings } = useDriveModeSettings();
   
   // Use model/voice from settings if not explicitly provided
-  const effectiveModel = model || settings.model || 'gpt-realtime';
+  const effectiveModel = model || settings.model || 'gpt-realtime-mini';
   const effectiveVoice = voice || settings.voice || 'verse';
   const onModelActiveRef = useRef(onModelActive);
   useEffect(() => { onModelActiveRef.current = onModelActive; }, [onModelActive]);

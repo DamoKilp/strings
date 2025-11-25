@@ -252,13 +252,13 @@ export function ProtocolsMemoriesDialog({ triggerClassName }: ProtocolsMemoriesD
             <Brain className="toolbar-icon" />
           </button>
         </DialogTrigger>
-        <DialogContentGlass className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogContentGlass className="max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeaderGlass>
-            <DialogTitle className="flex items-center gap-2">
+            <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-slate-900" style={{ color: 'rgb(15, 23, 42)' }}>
               <Brain className="h-5 w-5" />
               Protocols & Memories Manager
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription style={{ color: 'rgb(15, 23, 42)' }}>
               Create, edit, and delete voice protocols and AI memories. Protocols are used in voice chat when you say "run voice protocol".
             </DialogDescription>
           </DialogHeaderGlass>
@@ -277,15 +277,15 @@ export function ProtocolsMemoriesDialog({ triggerClassName }: ProtocolsMemoriesD
 
             {/* Protocols Tab */}
             <TabsContent value="protocols" className="flex-1 flex flex-col overflow-hidden mt-4">
-              <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+              <div className="flex-1 overflow-y-auto space-y-4">
                 {/* Create/Edit Form */}
                 <div className="p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-white/10 backdrop-blur-sm space-y-4">
-                  <h3 className="text-lg font-semibold glass-text-primary">
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-900" style={{ color: 'rgb(15, 23, 42)' }}>
                     {editingProtocol ? 'Edit Protocol' : 'Create New Protocol'}
                   </h3>
                   <div className="space-y-3">
                     <div>
-                      <Label htmlFor="protocol-name" className="glass-text-secondary">Protocol Name</Label>
+                      <Label htmlFor="protocol-name" className="glass-text-secondary" style={{ color: 'rgb(15, 23, 42)' }}>Protocol Name</Label>
                       <Input
                         id="protocol-name"
                         value={protocolForm.name}
@@ -299,7 +299,7 @@ export function ProtocolsMemoriesDialog({ triggerClassName }: ProtocolsMemoriesD
                       </p>
                     </div>
                     <div>
-                      <Label htmlFor="protocol-content" className="glass-text-secondary">Protocol Steps/Instructions</Label>
+                      <Label htmlFor="protocol-content" className="glass-text-secondary" style={{ color: 'rgb(15, 23, 42)' }}>Protocol Steps/Instructions</Label>
                       <Textarea
                         id="protocol-content"
                         value={protocolForm.content}
@@ -310,7 +310,7 @@ export function ProtocolsMemoriesDialog({ triggerClassName }: ProtocolsMemoriesD
                       />
                     </div>
                     <div>
-                      <Label htmlFor="protocol-importance" className="glass-text-secondary">Importance (1-10)</Label>
+                      <Label htmlFor="protocol-importance" className="glass-text-secondary" style={{ color: 'rgb(15, 23, 42)' }}>Importance (1-10)</Label>
                       <Input
                         id="protocol-importance"
                         type="number"
@@ -350,7 +350,7 @@ export function ProtocolsMemoriesDialog({ triggerClassName }: ProtocolsMemoriesD
 
                 {/* Protocols List */}
                 <div className="space-y-2">
-                  <h3 className="text-md font-semibold glass-text-primary">Existing Protocols ({protocols.length})</h3>
+                  <h3 className="text-md font-semibold text-slate-900 dark:text-slate-900" style={{ color: 'rgb(15, 23, 42)' }}>Existing Protocols ({protocols.length})</h3>
                   {protocols.length === 0 ? (
                     <div className="space-y-2 p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-white/10 backdrop-blur-sm text-center text-muted-foreground">
                       No protocols yet. Create one above to get started.
@@ -382,7 +382,7 @@ export function ProtocolsMemoriesDialog({ triggerClassName }: ProtocolsMemoriesD
                                     Trigger: "run the {protocolName} protocol"
                                   </p>
                                 )}
-                                <p className="glass-text-primary whitespace-pre-wrap">{displayContent || protocol.content}</p>
+                                <p className="glass-text-primary whitespace-pre-wrap text-slate-900 dark:text-slate-900" style={{ color: 'rgb(15, 23, 42)' }}>{displayContent || protocol.content}</p>
                               </div>
                               <div className="flex gap-2">
                                 <Button
@@ -415,15 +415,15 @@ export function ProtocolsMemoriesDialog({ triggerClassName }: ProtocolsMemoriesD
 
             {/* Memories Tab */}
             <TabsContent value="memories" className="flex-1 flex flex-col overflow-hidden mt-4">
-              <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+              <div className="flex-1 overflow-y-auto space-y-4">
                 {/* Create/Edit Form */}
                 <div className="p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-white/10 backdrop-blur-sm space-y-4">
-                  <h3 className="text-lg font-semibold glass-text-primary">
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-900" style={{ color: 'rgb(15, 23, 42)' }}>
                     {editingMemory ? 'Edit Memory' : 'Create New Memory'}
                   </h3>
                   <div className="space-y-3">
                     <div>
-                      <Label htmlFor="memory-content" className="glass-text-secondary">Memory Content</Label>
+                      <Label htmlFor="memory-content" className="glass-text-secondary" style={{ color: 'rgb(15, 23, 42)' }}>Memory Content</Label>
                       <Textarea
                         id="memory-content"
                         value={memoryForm.content}
@@ -435,7 +435,7 @@ export function ProtocolsMemoriesDialog({ triggerClassName }: ProtocolsMemoriesD
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <Label htmlFor="memory-category" className="glass-text-secondary">Category</Label>
+                        <Label htmlFor="memory-category" className="glass-text-secondary" style={{ color: 'rgb(15, 23, 42)' }}>Category</Label>
                         <Select
                           value={memoryForm.category}
                           onValueChange={(v) => setMemoryForm({ ...memoryForm, category: v })}
@@ -454,7 +454,7 @@ export function ProtocolsMemoriesDialog({ triggerClassName }: ProtocolsMemoriesD
                         </Select>
                       </div>
                       <div>
-                        <Label htmlFor="memory-importance" className="glass-text-secondary">Importance (1-10)</Label>
+                        <Label htmlFor="memory-importance" className="glass-text-secondary" style={{ color: 'rgb(15, 23, 42)' }}>Importance (1-10)</Label>
                         <Input
                           id="memory-importance"
                           type="number"
@@ -490,7 +490,7 @@ export function ProtocolsMemoriesDialog({ triggerClassName }: ProtocolsMemoriesD
 
                 {/* Memories List */}
                 <div className="space-y-2">
-                  <h3 className="text-md font-semibold glass-text-primary">Existing Memories ({memories.length})</h3>
+                  <h3 className="text-md font-semibold text-slate-900 dark:text-slate-900" style={{ color: 'rgb(15, 23, 42)' }}>Existing Memories ({memories.length})</h3>
                   {memories.length === 0 ? (
                     <div className="space-y-2 p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-white/10 backdrop-blur-sm text-center text-muted-foreground">
                       No memories yet. Create one above to get started.
@@ -514,7 +514,7 @@ export function ProtocolsMemoriesDialog({ triggerClassName }: ProtocolsMemoriesD
                                   {new Date(memory.created_at).toLocaleDateString()}
                                 </span>
                               </div>
-                              <p className="glass-text-primary whitespace-pre-wrap">{memory.content}</p>
+                              <p className="glass-text-primary whitespace-pre-wrap text-slate-900 dark:text-slate-900" style={{ color: 'rgb(15, 23, 42)' }}>{memory.content}</p>
                             </div>
                             <div className="flex gap-2">
                               <Button
