@@ -571,9 +571,12 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
             // Add conversation search instructions
             const conversationSearchInstructions = `\n\n**Previous Conversations:**\nYou have access to a search_conversations tool that searches through ALL previous conversations (both text and voice chats) with the user. Use this when:\n- The user asks "what did we talk about", "remember when we discussed", "look at our previous conversations"\n- The user wants to find a specific past conversation or topic\n- The user references something from a previous chat\n\nThis searches the full conversation history stored in the database, so you can find any past discussion.`;
             
+            // Add code/project tools instructions
+            const codeToolsInstructions = `\n\n**Code & Project Tools (ACCESS TO USER'S REPOSITORIES):**\nYou have access to the user's code projects! Use these tools when discussing their apps:\n\n1. **get_project_info** - Get overview of a project (README, dependencies, structure)\n   - Use projectPath="strings" for the Strings app\n   - Use projectPath="ventiaam" for the Asset Management app\n   - Or use full path like "C:/Users/venti/NextJS_Projects/strings"\n\n2. **read_code_file** - Read specific code files\n   - Use with filePath (relative to project) and optional projectPath\n   - Example: filePath="components/chat/voice/DriveModeVoiceChat.tsx", projectPath="strings"\n\n3. **git_recent_changes** - See recent commits and uncommitted changes\n   - Shows branch, recent commits, and current changes\n   - Great for "what have I been working on" questions\n\n4. **search_code** - Search for text/patterns in code\n   - Use when user asks "where is X defined", "find usages of Y"\n   - Example: query="handleWebSearch", projectPath="strings"\n\n**Known Projects:**\n- "strings" = The Strings chat app (this app!)\n- "ventiaam" = The Asset Management app`;
+            
             const instructions = parts.length > 0
-              ? `${parts.join('\n\n')}${memoryToolInstructions}${voiceCommandInstructions}${webSearchInstructions}${conversationSearchInstructions}`
-              : `${languageInstruction}\n\nYou are a helpful AI assistant in a real-time voice conversation. Speak naturally, keep responses concise, and vary your phrasing to avoid repetition.${memoryToolInstructions}${voiceCommandInstructions}${webSearchInstructions}${conversationSearchInstructions}`;
+              ? `${parts.join('\n\n')}${memoryToolInstructions}${voiceCommandInstructions}${webSearchInstructions}${conversationSearchInstructions}${codeToolsInstructions}`
+              : `${languageInstruction}\n\nYou are a helpful AI assistant in a real-time voice conversation. Speak naturally, keep responses concise, and vary your phrasing to avoid repetition.${memoryToolInstructions}${voiceCommandInstructions}${webSearchInstructions}${conversationSearchInstructions}${codeToolsInstructions}`;
             
             // Add memory creation, protocol retrieval, and web search tools to session
             const tools = [
@@ -688,6 +691,83 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
                     }
                   },
                   required: []
+                }
+              },
+              // CODE/GIT REPOSITORY TOOLS
+              {
+                type: 'function',
+                name: 'get_project_info',
+                description: 'Get information about a code project/app the user is building. Returns README, package.json, and file structure. Use when user asks about their projects like "Strings", "Asset Management app", etc.',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    projectPath: {
+                      type: 'string',
+                      description: 'Path to the project. Common paths: "strings" for the Strings app (C:/Users/venti/NextJS_Projects/strings), or full path to any project.'
+                    }
+                  },
+                  required: ['projectPath']
+                }
+              },
+              {
+                type: 'function',
+                name: 'read_code_file',
+                description: 'Read a specific code file from a project. Use when user asks about specific files, components, or code.',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    filePath: {
+                      type: 'string',
+                      description: 'Path to the file to read. Can be relative to a project or absolute path.'
+                    },
+                    projectPath: {
+                      type: 'string',
+                      description: 'Optional project base path. If provided, filePath is relative to this.'
+                    }
+                  },
+                  required: ['filePath']
+                }
+              },
+              {
+                type: 'function',
+                name: 'git_recent_changes',
+                description: 'Get recent git commits and changes for a project. Use when user asks "what have I changed", "recent commits", "what did I work on".',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    projectPath: {
+                      type: 'string',
+                      description: 'Path to the git repository.'
+                    },
+                    limit: {
+                      type: 'number',
+                      description: 'Number of recent commits to show. Default is 10.'
+                    }
+                  },
+                  required: ['projectPath']
+                }
+              },
+              {
+                type: 'function',
+                name: 'search_code',
+                description: 'Search for text/patterns in code files. Use when user asks "where is X defined", "find usages of", "search for".',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    query: {
+                      type: 'string',
+                      description: 'The text or pattern to search for in code files.'
+                    },
+                    projectPath: {
+                      type: 'string',
+                      description: 'Path to search in.'
+                    },
+                    filePattern: {
+                      type: 'string',
+                      description: 'Optional file pattern to filter (e.g., "*.tsx", "*.ts"). Default searches common code files.'
+                    }
+                  },
+                  required: ['query', 'projectPath']
                 }
               }
             ];
@@ -1690,8 +1770,122 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
             }
           };
           
+          // ======================================================================
+          // CODE/GIT REPOSITORY TOOL HANDLERS
+          // ======================================================================
+          
+          const handleCodeTool = async (callId: string, action: string, input: Record<string, unknown>) => {
+            if (processedCallIdsRef.current.has(callId)) {
+              console.log(`[DriveMode] ${action}: already processed call_id`, callId);
+              return;
+            }
+            processedCallIdsRef.current.add(callId);
+            
+            try {
+              console.log(`[DriveMode] ${action} input:`, JSON.stringify(input));
+              
+              const response = await fetch('/api/code-tools', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action, ...input }),
+              });
+              
+              const data = await response.json();
+              
+              let output: string;
+              if (!response.ok || !data.success) {
+                output = `Error: ${data.error || 'Failed to execute code tool'}`;
+              } else {
+                // Format output based on action type
+                switch (action) {
+                  case 'get_project_info': {
+                    const r = data.result;
+                    const parts: string[] = [`Project: ${r.projectPath}`];
+                    if (r.packageJson) {
+                      parts.push(`Name: ${r.packageJson.name}, Version: ${r.packageJson.version}`);
+                      if (r.packageJson.description) parts.push(`Description: ${r.packageJson.description}`);
+                      parts.push(`Scripts: ${r.packageJson.scripts.join(', ')}`);
+                      parts.push(`Key dependencies: ${r.packageJson.dependencies.slice(0, 10).join(', ')}`);
+                    }
+                    if (r.structure) {
+                      const dirs = r.structure.filter((s: {type: string}) => s.type === 'dir').map((s: {name: string}) => s.name);
+                      parts.push(`Folders: ${dirs.join(', ')}`);
+                    }
+                    if (r.readme) {
+                      parts.push(`README excerpt: ${r.readme.substring(0, 500)}...`);
+                    }
+                    output = parts.join('\n');
+                    break;
+                  }
+                  case 'read_code_file': {
+                    const r = data.result;
+                    output = `File: ${r.path} (${r.size} chars)\n\n${r.content}`;
+                    break;
+                  }
+                  case 'git_recent_changes': {
+                    const r = data.result;
+                    const parts: string[] = [`Branch: ${r.branch}`];
+                    if (r.uncommittedChanges.length > 0) {
+                      parts.push(`Uncommitted changes:\n${r.uncommittedChanges.join('\n')}`);
+                    }
+                    parts.push(`Recent commits:\n${r.recentCommits.join('\n')}`);
+                    output = parts.join('\n\n');
+                    break;
+                  }
+                  case 'search_code': {
+                    const r = data.result;
+                    if (r.matches.length === 0) {
+                      output = `No matches found for "${r.query}"`;
+                    } else {
+                      const matches = r.matches.map((m: {file: string; match: string}) => `${m.file}: ${m.match}`).join('\n');
+                      output = `Found ${r.matchCount} matches for "${r.query}":\n${matches}`;
+                    }
+                    break;
+                  }
+                  default:
+                    output = JSON.stringify(data.result);
+                }
+              }
+              
+              console.log(`[DriveMode] ${action} completed`);
+              
+              if (dc.readyState === 'open') {
+                dc.send(JSON.stringify({
+                  type: 'conversation.item.create',
+                  item: {
+                    type: 'function_call_output',
+                    call_id: callId,
+                    output
+                  }
+                }));
+                dc.send(JSON.stringify({ type: 'response.create' }));
+              }
+            } catch (err) {
+              console.error(`[DriveMode] ${action}: error`, err);
+              try {
+                if (dc.readyState === 'open') {
+                  dc.send(JSON.stringify({
+                    type: 'conversation.item.create',
+                    item: {
+                      type: 'function_call_output',
+                      call_id: callId,
+                      output: `Error executing ${action}. Please try again.`
+                    }
+                  }));
+                  dc.send(JSON.stringify({ type: 'response.create' }));
+                }
+              } catch {}
+            }
+          };
+          
           // Handle specific Realtime API event types that contain function calls
           // (eventType already declared above)
+          
+          // All supported tool names
+          const SUPPORTED_TOOLS = [
+            'search_memories', 'create_memory', 'get_protocol', 'web_search', 'search_conversations',
+            'get_project_info', 'read_code_file', 'git_recent_changes', 'search_code'
+          ];
           
           // Helper to handle tool calls based on name
           const handleToolCall = (toolCall: { callId: string; name: string; arguments: Record<string, unknown> }) => {
@@ -1710,6 +1904,18 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
             } else if (toolCall.name === 'search_conversations') {
               console.log('[DriveMode] search_conversations tool call detected', { callId: toolCall.callId, arguments: toolCall.arguments });
               handleConversationSearch(toolCall.callId, toolCall.arguments);
+            } else if (toolCall.name === 'get_project_info') {
+              console.log('[DriveMode] get_project_info tool call detected', { callId: toolCall.callId });
+              handleCodeTool(toolCall.callId, 'get_project_info', toolCall.arguments);
+            } else if (toolCall.name === 'read_code_file') {
+              console.log('[DriveMode] read_code_file tool call detected', { callId: toolCall.callId });
+              handleCodeTool(toolCall.callId, 'read_code_file', toolCall.arguments);
+            } else if (toolCall.name === 'git_recent_changes') {
+              console.log('[DriveMode] git_recent_changes tool call detected', { callId: toolCall.callId });
+              handleCodeTool(toolCall.callId, 'git_recent_changes', toolCall.arguments);
+            } else if (toolCall.name === 'search_code') {
+              console.log('[DriveMode] search_code tool call detected', { callId: toolCall.callId });
+              handleCodeTool(toolCall.callId, 'search_code', toolCall.arguments);
             }
           };
           
@@ -1717,7 +1923,7 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
           if (eventType === 'response.function_call_arguments.done') {
             const responseId = (obj as { response_id?: string }).response_id as string | undefined;
             const toolCall = extractToolCall(obj);
-            if (toolCall && (toolCall.name === 'search_memories' || toolCall.name === 'create_memory' || toolCall.name === 'get_protocol' || toolCall.name === 'web_search' || toolCall.name === 'search_conversations') && !processedCallIdsRef.current.has(toolCall.callId)) {
+            if (toolCall && SUPPORTED_TOOLS.includes(toolCall.name) && !processedCallIdsRef.current.has(toolCall.callId)) {
               // Track which response_id this call_id belongs to
               if (responseId) {
                 callIdToResponseIdRef.current.set(toolCall.callId, responseId);
@@ -1732,7 +1938,7 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
             const item = (obj as { item?: unknown }).item;
             if (item && typeof item === 'object') {
               const toolCall = extractToolCall(item as Record<string, unknown>);
-              if (toolCall && (toolCall.name === 'search_memories' || toolCall.name === 'create_memory' || toolCall.name === 'get_protocol' || toolCall.name === 'web_search' || toolCall.name === 'search_conversations') && !processedCallIdsRef.current.has(toolCall.callId)) {
+              if (toolCall && SUPPORTED_TOOLS.includes(toolCall.name) && !processedCallIdsRef.current.has(toolCall.callId)) {
                 handleToolCall(toolCall);
               }
             }
@@ -1745,7 +1951,7 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
               for (const outputItem of response.output) {
                 if (outputItem && typeof outputItem === 'object') {
                   const toolCall = extractToolCall(outputItem as Record<string, unknown>);
-                  if (toolCall && (toolCall.name === 'search_memories' || toolCall.name === 'create_memory' || toolCall.name === 'get_protocol' || toolCall.name === 'web_search' || toolCall.name === 'search_conversations') && !processedCallIdsRef.current.has(toolCall.callId)) {
+                  if (toolCall && SUPPORTED_TOOLS.includes(toolCall.name) && !processedCallIdsRef.current.has(toolCall.callId)) {
                     handleToolCall(toolCall);
                   }
                 }
@@ -1757,7 +1963,7 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
           const checkForToolCalls = (data: Record<string, unknown>, path = 'root'): void => {
             // Check if this object itself is a tool call
             const toolCall = extractToolCall(data);
-            if (toolCall && (toolCall.name === 'search_memories' || toolCall.name === 'create_memory' || toolCall.name === 'get_protocol' || toolCall.name === 'web_search' || toolCall.name === 'search_conversations')) {
+            if (toolCall && SUPPORTED_TOOLS.includes(toolCall.name)) {
               console.log('[DriveMode]', toolCall.name, 'tool call detected at path:', path, { callId: toolCall.callId });
               handleToolCall(toolCall);
               return;
@@ -1776,7 +1982,7 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
                 data.arguments
               );
               
-              if ((legacyName === 'search_memories' || legacyName === 'create_memory' || legacyName === 'get_protocol' || legacyName === 'web_search' || legacyName === 'search_conversations') && legacyCallId && legacyArgs) {
+              if (legacyName && SUPPORTED_TOOLS.includes(legacyName) && legacyCallId && legacyArgs) {
                 console.log('[DriveMode]', legacyName, 'tool call detected (legacy format) at path:', path, { callId: legacyCallId });
                 handleToolCall({ callId: legacyCallId, name: legacyName, arguments: legacyArgs });
                 return;
