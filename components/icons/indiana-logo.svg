@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <title>Indiana Logo Icon</title>
+  
+  <!-- Black background -->
+  <rect width="512" height="512" fill="#000000"/>
+  
+  <!-- White Indiana state outline -->
+  <path d="M256 100 
+           L290 115 L310 145 L320 180 L318 215 L310 250 L295 280 L275 305 L250 325 L225 335 L200 340 L175 335 L150 325 L125 305 L105 280 L90 250 L82 215 L80 180 L90 145 L110 115 L145 100 L180 95 L220 95 L256 100 Z" 
+        fill="none" 
+        stroke="#FFFFFF" 
+        stroke-width="3.5" 
+        stroke-linejoin="round" 
+        stroke-linecap="round"/>
+  
+  <!-- Left blue wing/leaf shape - curves upward and outward to left, converges at bottom -->
+  <path d="M256 400 
+           L230 380 
+           C210 350, 200 310, 200 270
+           C200 240, 210 210, 230 190
+           C250 175, 275 180, 290 200
+           C300 220, 295 250, 285 280
+           C275 310, 260 340, 245 370
+           L256 400 Z" 
+        fill="#0066FF" 
+        opacity="0.95"/>
+  
+  <!-- Right green wing/leaf shape - curves upward and outward to right, converges at bottom -->
+  <path d="M256 400 
+           L282 380 
+           C302 350, 312 310, 312 270
+           C312 240, 302 210, 282 190
+           C262 175, 237 180, 222 200
+           C212 220, 217 250, 227 280
+           C237 310, 252 340, 267 370
+           L256 400 Z" 
+        fill="#00CC66" 
+        opacity="0.95"/>
+  
+  <!-- Overlapping center area (darker teal) - where blue and green overlap -->
+  <path d="M256 200 
+           C270 220, 275 250, 270 280
+           C265 310, 255 340, 245 370
+           L256 400
+           L267 370
+           C277 340, 287 310, 282 280
+           C277 250, 272 220, 258 200
+           C257 199, 256 199, 256 200 Z" 
+        fill="#008080" 
+        opacity="0.9"/>
+</svg>
+

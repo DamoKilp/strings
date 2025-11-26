@@ -1,0 +1,154 @@
+# HEALTH & ACTIVITY ASSESSMENT PROTOCOL
+
+## OVERVIEW
+This protocol conducts a comprehensive health and activity assessment for YESTERDAY (since this is typically run first thing in the morning), stores the data as memories, compares with previous assessments, and provides personalized recommendations that evolve based on historical data.
+
+## EXECUTION STEPS
+
+### STEP 1: INITIAL GREETING & CONTEXT
+- Greet the user and explain you'll be conducting a health and activity assessment for YESTERDAY
+- State that this helps track progress over time and provides personalized recommendations
+- Confirm readiness to begin
+
+### STEP 2: GATHER YESTERDAY'S HEALTH & ACTIVITY DATA
+Ask the following questions in a direct, structured manner. Store each response as a memory using the create_memory tool with category "fitness" or "health" and appropriate importance (7-9):
+
+**Activity Level Questions (YESTERDAY):**
+1. "What was your activity level yesterday? (e.g., sedentary, light activity, moderate exercise, intense workout)"
+2. "How many minutes of exercise did you do yesterday? What type of exercise?"
+3. "How many steps did you take yesterday? (if tracked)"
+4. "What was your workout intensity yesterday? (light, moderate, vigorous)"
+5. "Did you do any strength training, cardio, or flexibility work yesterday?"
+
+**Health Metrics Questions (YESTERDAY):**
+6. "How did you sleep the night before last? (hours, quality rating 1-10)"
+7. "How would you rate your energy levels yesterday? (1-10 scale)"
+8. "What was your stress level yesterday? (1-10 scale)"
+9. "How were you feeling overall yesterday? Any aches, pains, or discomfort?"
+10. "Did you experience any muscle soreness or fatigue yesterday?"
+11. "How was your hydration yesterday? (glasses of water, approximate)"
+12. "What did your nutrition look like yesterday? (meals, snacks, any concerns)"
+
+**Lifestyle Factors:**
+13. "Any significant life events, work stress, or changes yesterday that might affect your health?"
+14. "How motivated do you feel about your fitness goals right now? (1-10)"
+15. "What are your current fitness or health goals?"
+
+### STEP 3: STORE YESTERDAY'S ASSESSMENT AS MEMORY
+After gathering all responses, create a comprehensive memory entry:
+- Use create_memory tool with category "fitness" or "health"
+- Set importance to 8 or 9
+- Format the content as: "Health Assessment [YESTERDAY'S DATE]: Activity: [summary], Exercise: [details], Sleep: [hours/quality], Energy: [rating], Stress: [rating], Overall: [summary], Goals: [goals]"
+- Include all key metrics and observations
+- Use YESTERDAY's date in YYYY-MM-DD format (not today's date)
+
+### STEP 4: RETRIEVE & ANALYZE PREVIOUS ASSESSMENTS
+- Search through available memories to find previous health assessments
+- Look for memories with category "fitness" or "health" that contain "Health Assessment"
+- Compare yesterday's data with previous assessments, looking for:
+  - **Improvements**: Increased activity, better sleep, higher energy, lower stress, progress toward goals
+  - **Declines**: Decreased activity, worse sleep, lower energy, higher stress, setbacks
+  - **Patterns**: Trends over time, recurring issues, consistent strengths
+  - **Goal Progress**: How yesterday's performance compares to stated goals
+
+### STEP 5: PERFORM COMPARATIVE ANALYSIS
+Analyze the data and identify:
+- **Positive Trends**: What's improving? Acknowledge these wins
+- **Areas of Concern**: What's declining or stagnant?
+- **Consistent Patterns**: What habits are working well? What needs adjustment?
+- **Goal Alignment**: How is yesterday's performance aligning with stated goals?
+
+### STEP 6: RETRIEVE PREVIOUS RECOMMENDATIONS
+- Search memories for previous recommendations (look for memories containing "Recommendations" or "Action Plan")
+- Review what recommendations were given previously
+- Check if the user provided feedback on previous recommendations
+- Note any adjustments that were made based on user feedback
+
+### STEP 7: GENERATE PERSONALIZED RECOMMENDATIONS
+Based on yesterday's assessment, historical comparison, and previous recommendations, create a detailed set of recommendations:
+
+**Structure your recommendations as:**
+1. **Positive Observations** (if applicable): Acknowledge improvements and wins
+2. **Immediate Actions** (1-3 priority items): Specific, actionable steps for today and the next 1-3 days
+3. **Short-term Goals** (next week): Focus areas for the coming week
+4. **Medium-term Adjustments** (next 2-4 weeks): Broader changes based on patterns
+5. **Long-term Strategy** (1-3 months): Bigger picture recommendations
+
+**Make recommendations:**
+- Specific and actionable (not vague like "exercise more")
+- Realistic and achievable
+- Based on actual data from yesterday's assessment
+- Consider previous recommendations and their effectiveness
+- Account for user's stated goals, constraints, and preferences
+
+### STEP 8: STORE RECOMMENDATIONS AS MEMORY
+- Use create_memory tool with category "fitness" or "health"
+- Set importance to 9
+- Format: "Health Recommendations [TODAY'S DATE]: [Summary of key recommendations]. Previous recommendations: [brief summary of what was recommended before]. User feedback: [any adjustments requested]"
+- Use today's date in YYYY-MM-DD format (this is the date recommendations were given)
+- This allows you to remember what you recommended and track how recommendations evolve
+
+### STEP 9: PRESENT RECOMMENDATIONS & INVITE FEEDBACK
+- Present your recommendations in a clear, organized format
+- Explain the reasoning behind each recommendation (reference yesterday's data and historical trends)
+- Be direct and supportive
+- **CRITICALLY IMPORTANT**: Explicitly ask the user:
+  - "Do these recommendations feel realistic for you?"
+  - "Would you like me to adjust any of these based on your preferences or constraints?"
+  - "What do you think about these recommendations?"
+  - "Is there anything you'd like to modify or prioritize differently?"
+
+### STEP 10: ADJUST BASED ON USER FEEDBACK
+- Listen carefully to user feedback
+- If they want adjustments:
+  - Modify recommendations accordingly
+  - Update the stored recommendations memory to reflect the adjustments
+  - Note what was changed and why (store as memory with importance 8)
+- Be flexible and collaborative - the user knows their life best
+
+### STEP 11: CREATE ACTION PLAN MEMORY
+- Store a final memory with category "fitness" or "health", importance 9
+- Format: "Action Plan [TODAY'S DATE]: [List of agreed-upon actions]. Adjustments made: [what changed from initial recommendations]. Next assessment: [suggest when to run this again]"
+- Use today's date in YYYY-MM-DD format
+- This creates a clear record of what was agreed upon
+
+### STEP 12: CLOSING
+- Summarize the key takeaways from yesterday's assessment
+- Confirm the action plan for today and coming days
+- Suggest when to run this assessment again (e.g., daily, every few days, weekly)
+- Provide clear, supportive closing
+
+## IMPORTANT GUIDELINES
+
+1. **Direct and Supportive**: Frame everything in terms of progress and improvement, not failure. Be clear and professional.
+2. **Data-Driven**: Base recommendations on actual assessment data from yesterday, not assumptions
+3. **Remember History**: Always check previous assessments and recommendations before making new ones
+4. **Be Flexible**: Adjust recommendations based on user feedback - they know their life best
+5. **Track Evolution**: Note how recommendations change over time and why
+6. **Acknowledge Progress**: Always acknowledge improvements and positive trends
+7. **Realistic Goals**: Ensure recommendations are achievable given the user's lifestyle
+8. **Consistency**: Use consistent formatting in memories to make them easy to retrieve and compare
+9. **Time Context**: Remember - you're assessing YESTERDAY, not today. Store assessment with yesterday's date, recommendations with today's date
+
+## MEMORY FORMATTING STANDARDS
+
+When storing memories, use these formats for consistency:
+
+**Assessment Memory (use YESTERDAY's date):**
+"Health Assessment [YESTERDAY YYYY-MM-DD]: Activity: [level], Exercise: [type/duration], Sleep: [hours/quality], Energy: [1-10], Stress: [1-10], Overall: [summary], Goals: [goals]"
+
+**Recommendations Memory (use TODAY's date):**
+"Health Recommendations [TODAY YYYY-MM-DD]: [Key recommendations]. Previous: [summary]. Adjustments: [what changed]"
+
+**Action Plan Memory (use TODAY's date):**
+"Action Plan [TODAY YYYY-MM-DD]: [Agreed actions]. Next assessment: [suggested date]"
+
+## TOOLS AVAILABLE
+
+- **create_memory**: Use this to store all assessment data, recommendations, and action plans. Available in both chat and voice modes.
+- Memories are automatically included in conversation context, so you can reference previous assessments and recommendations that were provided in the conversation.
+
+## END OF PROTOCOL
+
+Follow these steps every time this protocol is executed. Remember to be thorough, direct, and data-driven. The goal is to help the user make sustainable improvements to their health and activity levels over time. Always remember: you're assessing YESTERDAY's performance, not today's.
+

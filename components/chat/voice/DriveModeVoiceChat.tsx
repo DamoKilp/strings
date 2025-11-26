@@ -103,7 +103,7 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
   const { settings } = useDriveModeSettings();
   
   // Use model/voice from settings if not explicitly provided
-  const effectiveModel = model || settings.model || 'gpt-realtime-mini';
+  const effectiveModel = model || settings.model || 'gpt-realtime-mini-2025-10-06';
   const effectiveVoice = voice || settings.voice || 'verse';
   const onModelActiveRef = useRef(onModelActive);
   useEffect(() => { onModelActiveRef.current = onModelActive; }, [onModelActive]);
@@ -351,10 +351,10 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
               // Error getting pre-prompt, using default
             }
             
-            // Fetch relevant memories
+            // Fetch relevant memories - load more for richer context
             let memoriesText = '';
             try {
-              const memories = await MemoryService.getMemories({ limit: 20, minImportance: 3 });
+              const memories = await MemoryService.getMemories({ limit: 100, minImportance: 1 });
               if (memories.length > 0) {
                 memoriesText = MemoryService.formatMemoriesForPrompt(memories);
               }
@@ -374,10 +374,10 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
             const memoryToolInstructions = `\n\n**Memory Management:**\nYou have access to a create_memory tool. Use it to store important information about the user when they share:\n- Personal information (preferences, family details, important dates)\n- Goals and aspirations (fitness goals, work projects)\n- Important facts about their life, work, or relationships\nStore memories with appropriate importance levels (5-7 for general facts, 8-9 for important preferences, 10 for critical information like how to address the user).`;
             
             // Add voice command instructions
-            const voiceCommandInstructions = `\n\n**Voice Commands & Protocols:**\nThe user can trigger special behaviors using voice commands:\n- "run voice protocol" or "follow protocol" or "apply protocol": Retrieve and follow a protocol/instruction stored in memories (category: 'protocol' or 'protocols')\n- "run protocol [name]": Retrieve a specific protocol by name\nWhen the user requests a protocol, use the get_protocol tool to retrieve it from memories, then follow the instructions in that protocol. Protocols are stored as memories with category 'protocol' or 'protocols'.`;
+            const voiceCommandInstructions = `\n\n**Voice Commands & Protocols (IMPORTANT):**\nWhen the user mentions ANY of these phrases, you MUST use the get_protocol tool FIRST before doing anything else:\n- "run protocol", "run the [name] protocol", "execute protocol"\n- "follow protocol", "apply protocol", "use protocol"\n- "run voice protocol", "start protocol"\n\n**CRITICAL PROTOCOL WORKFLOW:**\n1. When user says "run the News protocol" or similar, call get_protocol with protocolName="News"\n2. The get_protocol tool will return the actual instructions stored in that protocol\n3. You MUST then follow those returned instructions exactly (which may include web searches, specific actions, etc.)\n4. Do NOT guess what a protocol does - ALWAYS retrieve it first\n\nProtocols are stored instructions that tell you exactly what to do. They may contain multi-step workflows like "search for X, then search for Y, then summarize". You must retrieve the protocol content first to know what actions to take.`;
             
             // Add web search instructions
-            const webSearchInstructions = `\n\n**Web Search:**\nYou have access to a web_search tool that allows you to search the internet for current information. Use this tool when:\n- The user asks about current events, recent news, or up-to-date information\n- The user explicitly asks you to "search online", "look it up", "check the web", or similar phrases\n- You need real-time information that may not be in your training data\n- The user asks about "today", "this week", "latest", "current" information\nWhen using web search, summarize the results concisely for voice consumption. Keep responses natural and conversational.`;
+            const webSearchInstructions = `\n\n**Web Search:**\nYou have access to a web_search tool that allows you to search the internet for current information. Use this tool when:\n- The user asks about current events, recent news, or up-to-date information\n- The user explicitly asks you to "search online", "look it up", "check the web", or similar phrases\n- You need real-time information that may not be in your training data\n- The user asks about "today", "this week", "latest", "current" information\n\n**IMPORTANT for news searches:** When searching for NEWS or HEADLINES, you MUST set searchType to "news". This ensures you get actual news articles instead of generic information. Example: for "Western Australian news today", use query="Western Australian news today" and searchType="news".\n\nWhen using web search, summarize the results concisely for voice consumption. Keep responses natural and conversational.`;
             
             const instructions = parts.length > 0
               ? `${parts.join('\n\n')}${memoryToolInstructions}${voiceCommandInstructions}${webSearchInstructions}`
@@ -414,22 +414,22 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
               {
                 type: 'function',
                 name: 'get_protocol',
-                description: 'Retrieve a protocol or instruction from memories. Use this when the user asks to "run voice protocol", "follow protocol", "apply protocol", or requests a specific protocol by name. Protocols are stored as memories with category "protocol" or "protocols".',
+                description: 'IMPORTANT: You MUST call this tool FIRST whenever the user mentions running, executing, or following a protocol. This retrieves stored instructions that tell you what actions to perform. For example, if user says "run the News protocol", call this with protocolName="News" to get the actual instructions, then follow those instructions. Never guess what a protocol does - always retrieve it first.',
                 parameters: {
                   type: 'object',
                   properties: {
                     protocolName: {
                       type: 'string',
-                      description: 'Optional: Name or keyword to search for a specific protocol. If not provided, retrieves all available protocols.'
+                      description: 'The name or keyword of the protocol to retrieve (e.g., "News", "Morning", "Weather"). Extract this from what the user says - if they say "run the News protocol", use "News".'
                     }
                   },
-                  required: []
+                  required: ['protocolName']
                 }
               },
               {
                 type: 'function',
                 name: 'web_search',
-                description: 'Search the internet for current information, news, or real-time data. Use this when the user asks about current events, recent information, or explicitly requests a web search. Also use when the user mentions "today", "this week", "latest", or "current" information.',
+                description: 'Search the internet for current information, news, or real-time data. Use this when the user asks about current events, recent information, or explicitly requests a web search. IMPORTANT: When searching for NEWS or HEADLINES, you MUST set searchType to "news" to get actual news articles.',
                 parameters: {
                   type: 'object',
                   properties: {
@@ -442,6 +442,11 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
                       minimum: 1,
                       maximum: 10,
                       description: 'Maximum number of search results to return. Default is 5. Use fewer results for voice responses to keep them concise.'
+                    },
+                    searchType: {
+                      type: 'string',
+                      enum: ['general', 'news'],
+                      description: 'Type of search. Use "news" when searching for news articles, headlines, current events, or recent happenings. Use "general" for other searches. Default is "general".'
                     }
                   },
                   required: ['query']
@@ -511,17 +516,17 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
             console.log('[DriveMode] Session ready confirmed via event');
           }
           
-          // Check for tool result creation confirmation
+          // Check for function_call_output creation confirmation
           if (obj.type === 'conversation.item.created') {
             const item = (obj as { item?: unknown }).item;
             if (item && typeof item === 'object') {
               const itemObj = item as Record<string, unknown>;
               const itemType = itemObj.type as string | undefined;
-              // Log ALL conversation.item.created events to debug
-              if (itemType === 'tool_result') {
+              // Log function_call_output confirmations
+              if (itemType === 'function_call_output') {
                 const callId = itemObj.call_id as string | undefined;
                 const itemId = itemObj.id as string | undefined;
-                console.log('[DriveMode] ✅ Tool result created and confirmed by API, call_id:', callId, 'item_id:', itemId);
+                console.log('[DriveMode] ✅ function_call_output confirmed by API, call_id:', callId, 'item_id:', itemId);
                 // Store item_id for potential updates
                 if (callId && itemId) {
                   callIdToItemIdRef.current.set(callId, itemId);
@@ -542,15 +547,15 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
             }
           }
           
-          // Check for tool result update confirmation
+          // Check for function_call_output update confirmation
           if (obj.type === 'conversation.item.updated') {
             const item = (obj as { item?: unknown }).item;
             if (item && typeof item === 'object') {
               const itemObj = item as Record<string, unknown>;
-              if (itemObj.type === 'tool_result') {
+              if (itemObj.type === 'function_call_output') {
                 const callId = itemObj.call_id as string | undefined;
                 const itemId = itemObj.id as string | undefined;
-                console.log('[DriveMode] ✅ Tool result updated and confirmed by API, call_id:', callId, 'item_id:', itemId);
+                console.log('[DriveMode] ✅ function_call_output updated and confirmed by API, call_id:', callId, 'item_id:', itemId);
                 // Remove from pending if it was stored
                 if (callId) {
                   pendingToolResultsRef.current.delete(callId);
@@ -559,14 +564,14 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
             }
           }
           
-          // Also check for tool result in response.output_item.added
+          // Also check for function_call_output in response.output_item.added
           if (obj.type === 'response.output_item.added') {
             const item = (obj as { item?: unknown }).item;
             if (item && typeof item === 'object') {
               const itemObj = item as Record<string, unknown>;
-              if (itemObj.type === 'tool_result') {
+              if (itemObj.type === 'function_call_output') {
                 const callId = itemObj.call_id as string | undefined;
-                console.log('[DriveMode] ✅ Tool result added to response, call_id:', callId);
+                console.log('[DriveMode] ✅ function_call_output added to response, call_id:', callId);
                 if (callId) {
                   pendingToolResultsRef.current.delete(callId);
                 }
@@ -579,22 +584,19 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
             const pendingResult = pendingToolResultsRef.current.get(callId);
             if (pendingResult && dc.readyState === 'open') {
               console.log('[DriveMode] Found pending result for call_id:', callId, 'sending now');
-              const toolResultPayload = {
-                type: 'conversation.item.create',
-                item: {
-                  type: 'tool_result',
-                  call_id: callId,
-                  content: [
-                    {
-                      type: 'text',
-                      text: pendingResult.result
-                    }
-                  ]
-                }
-              };
               try {
-                dc.send(JSON.stringify(toolResultPayload));
-                console.log('[DriveMode] ✅ Pending tool result sent for call_id:', callId);
+                // Use function_call_output format (correct for Realtime API)
+                dc.send(JSON.stringify({
+                  type: 'conversation.item.create',
+                  item: {
+                    type: 'function_call_output',
+                    call_id: callId,
+                    output: pendingResult.result
+                  }
+                }));
+                // Trigger response generation
+                dc.send(JSON.stringify({ type: 'response.create' }));
+                console.log('[DriveMode] ✅ Pending function_call_output sent for call_id:', callId);
                 pendingToolResultsRef.current.delete(callId);
                 return true;
               } catch (err) {
@@ -628,46 +630,18 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
             }
           }
           
-          // Helper to send placeholder for web_search (defined before handleWebSearch)
+          // Helper to send "searching" audio response while web search runs
+          // Instead of sending a fake tool result (which doesn't work well),
+          // we let the model naturally wait for the real result
           const sendWebSearchPlaceholder = (callId: string) => {
             if (placeholderSentRef.current.has(callId)) {
               return; // Already sent
             }
             placeholderSentRef.current.add(callId);
-            const placeholderText = 'Searching the web for information...';
-            
-            if (dc.readyState === 'open') {
-              try {
-                const placeholderPayload = {
-                  type: 'conversation.item.create',
-                  item: {
-                    type: 'tool_result',
-                    call_id: callId,
-                    content: [
-                      {
-                        type: 'text',
-                        text: placeholderText
-                      }
-                    ]
-                  }
-                };
-                const payloadStr = JSON.stringify(placeholderPayload);
-                dc.send(payloadStr);
-                console.log('[DriveMode] ✅ Placeholder tool result sent immediately for call_id:', callId);
-                console.log('[DriveMode] Placeholder payload:', payloadStr);
-                // Set timeout to check if item_id was received
-                setTimeout(() => {
-                  const storedItemId = callIdToItemIdRef.current.get(callId);
-                  if (!storedItemId) {
-                    console.warn('[DriveMode] ⚠️ Placeholder item_id not received after 1 second for call_id:', callId);
-                  } else {
-                    console.log('[DriveMode] ✅ Placeholder item_id received:', storedItemId);
-                  }
-                }, 1000);
-              } catch (placeholderErr) {
-                console.error('[DriveMode] Failed to send placeholder:', placeholderErr);
-              }
-            }
+            // Don't send a placeholder tool result - the Realtime API doesn't handle
+            // partial/placeholder function_call_output well. Instead, we'll just
+            // let the search complete and send the real result.
+            console.log('[DriveMode] 📝 Marked web_search as in-progress for call_id:', callId);
           };
           
           // Check when function calls are added to responses
@@ -792,6 +766,17 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
               const memoryInput = input as { content?: string; category?: string; importance?: number };
               if (!memoryInput?.content) {
                 console.warn('[DriveMode] create_memory: missing content', memoryInput);
+                if (dc.readyState === 'open') {
+                  dc.send(JSON.stringify({
+                    type: 'conversation.item.create',
+                    item: {
+                      type: 'function_call_output',
+                      call_id: callId,
+                      output: 'Error: Memory content is required.'
+                    }
+                  }));
+                  dc.send(JSON.stringify({ type: 'response.create' }));
+                }
                 return;
               }
               
@@ -799,6 +784,17 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
               const userId = userIdRef.current;
               if (!userId) {
                 console.error('[DriveMode] create_memory: no user ID available');
+                if (dc.readyState === 'open') {
+                  dc.send(JSON.stringify({
+                    type: 'conversation.item.create',
+                    item: {
+                      type: 'function_call_output',
+                      call_id: callId,
+                      output: 'Error: User not authenticated.'
+                    }
+                  }));
+                  dc.send(JSON.stringify({ type: 'response.create' }));
+                }
                 return;
               }
 
@@ -811,63 +807,44 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
                 importance: memoryInput.importance
               });
 
-              if (memory) {
-                console.log('[DriveMode] Memory created successfully:', memory.id);
-                // Send tool result back to Realtime API using call_id
-                if (dc.readyState === 'open') {
+              if (dc.readyState === 'open') {
+                if (memory) {
+                  console.log('[DriveMode] Memory created successfully:', memory.id);
                   dc.send(JSON.stringify({
                     type: 'conversation.item.create',
                     item: {
-                      type: 'tool_result',
+                      type: 'function_call_output',
                       call_id: callId,
-                      content: [
-                        {
-                          type: 'text',
-                          text: `Memory stored successfully: "${memoryInput.content}"`
-                        }
-                      ]
+                      output: `Memory stored successfully: "${memoryInput.content}"`
                     }
                   }));
-                }
-              } else {
-                console.error('[DriveMode] create_memory: failed to create');
-                // Send error result
-                if (dc.readyState === 'open') {
+                } else {
+                  console.error('[DriveMode] create_memory: failed to create');
                   dc.send(JSON.stringify({
                     type: 'conversation.item.create',
                     item: {
-                      type: 'tool_result',
+                      type: 'function_call_output',
                       call_id: callId,
-                      content: [
-                        {
-                          type: 'text',
-                          text: 'Failed to store memory. Please try again.'
-                        }
-                      ],
-                      is_error: true
+                      output: 'Failed to store memory. Please try again.'
                     }
                   }));
                 }
+                // Trigger response generation
+                dc.send(JSON.stringify({ type: 'response.create' }));
               }
             } catch (err) {
               console.error('[DriveMode] create_memory: error', err);
-              // Send error result
               try {
                 if (dc.readyState === 'open') {
                   dc.send(JSON.stringify({
                     type: 'conversation.item.create',
                     item: {
-                      type: 'tool_result',
+                      type: 'function_call_output',
                       call_id: callId,
-                      content: [
-                        {
-                          type: 'text',
-                          text: 'Error storing memory.'
-                        }
-                      ],
-                      is_error: true
+                      output: 'Error storing memory.'
                     }
                   }));
+                  dc.send(JSON.stringify({ type: 'response.create' }));
                 }
               } catch {}
             }
@@ -903,63 +880,53 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
                   dc.send(JSON.stringify({
                     type: 'conversation.item.create',
                     item: {
-                      type: 'tool_result',
+                      type: 'function_call_output',
                       call_id: callId,
-                      content: [
-                        {
-                          type: 'text',
-                          text: message
-                        }
-                      ],
-                      is_error: true
+                      output: message
                     }
                   }));
+                  dc.send(JSON.stringify({ type: 'response.create' }));
                 }
                 return;
               }
               
-              // Format protocols for the AI
-              const protocolText = protocols.length === 1
-                ? `**Protocol Found:**\n\n${protocols[0].content}`
-                : `**Found ${protocols.length} protocol(s):**\n\n${protocols.map((p, idx) => `${idx + 1}. ${p.content}`).join('\n\n')}`;
-              
+              // Format protocols for the AI with explicit execution instructions
               console.log('[DriveMode] Protocol(s) retrieved:', protocols.length);
+              
+              // Build output that instructs the AI to execute the protocol
+              let protocolOutput: string;
+              if (protocols.length === 1) {
+                protocolOutput = `PROTOCOL INSTRUCTIONS TO EXECUTE NOW:\n\n${protocols[0].content}\n\nYou must now execute these instructions step by step. Start immediately.`;
+              } else {
+                protocolOutput = `Found ${protocols.length} protocols. Execute the most relevant one:\n\n${protocols.map((p, idx) => `Protocol ${idx + 1}: ${p.content}`).join('\n\n')}\n\nExecute the instructions above step by step.`;
+              }
               
               // Send protocol(s) back to Realtime API
               if (dc.readyState === 'open') {
                 dc.send(JSON.stringify({
                   type: 'conversation.item.create',
                   item: {
-                    type: 'tool_result',
+                    type: 'function_call_output',
                     call_id: callId,
-                    content: [
-                      {
-                        type: 'text',
-                        text: protocolText
-                      }
-                    ]
+                    output: protocolOutput
                   }
                 }));
+                // Trigger response generation
+                dc.send(JSON.stringify({ type: 'response.create' }));
               }
             } catch (err) {
               console.error('[DriveMode] get_protocol: error', err);
-              // Send error result
               try {
                 if (dc.readyState === 'open') {
                   dc.send(JSON.stringify({
                     type: 'conversation.item.create',
                     item: {
-                      type: 'tool_result',
+                      type: 'function_call_output',
                       call_id: callId,
-                      content: [
-                        {
-                          type: 'text',
-                          text: 'Error retrieving protocol. Please try again.'
-                        }
-                      ],
-                      is_error: true
+                      output: 'Error retrieving protocol. Please try again.'
                     }
                   }));
+                  dc.send(JSON.stringify({ type: 'response.create' }));
                 }
               } catch {}
             }
@@ -976,28 +943,24 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
             processedCallIdsRef.current.add(callId);
             
             try {
-              const searchInput = input as { query?: string; maxResults?: number };
+const searchInput = input as { query?: string; maxResults?: number; searchType?: string };
               console.log('[DriveMode] web_search input:', JSON.stringify(searchInput));
               
               if (!searchInput?.query) {
                 console.warn('[DriveMode] web_search: missing query', searchInput);
                 if (dc.readyState === 'open') {
-                  const errorPayload = {
+                  // Use function_call_output format (correct for Realtime API)
+                  dc.send(JSON.stringify({
                     type: 'conversation.item.create',
                     item: {
-                      type: 'tool_result',
+                      type: 'function_call_output',
                       call_id: callId,
-                      content: [
-                        {
-                          type: 'text',
-                          text: 'Search query is required for web search.'
-                        }
-                      ],
-                      is_error: true
+                      output: 'Error: Search query is required for web search.'
                     }
-                  };
-                  console.log('[DriveMode] Sending error result:', JSON.stringify(errorPayload));
-                  dc.send(JSON.stringify(errorPayload));
+                  }));
+                  // Trigger response generation
+                  dc.send(JSON.stringify({ type: 'response.create' }));
+                  console.log('[DriveMode] Sent error function_call_output and response.create');
                 }
                 return;
               }
@@ -1005,18 +968,18 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
               const query = searchInput.query.trim();
               const maxResults = searchInput.maxResults || 5;
               
-              console.log('[DriveMode] Searching web for:', query);
+              console.log('[DriveMode] 🔍 Searching web for:', query);
               
-              // If placeholder wasn't sent yet, send it now (fallback - should rarely happen)
+              // Mark as in-progress (no placeholder sent)
               if (!placeholderSentRef.current.has(callId)) {
                 sendWebSearchPlaceholder(callId);
               }
               
-              // Now perform the actual search (async, takes 2-3 seconds)
+              // Perform the actual search (async, takes 2-3 seconds)
               const searchResponse = await fetch('/api/web-search', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query, maxResults }),
+body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 'general' }),
               });
               
               if (!searchResponse.ok) {
@@ -1030,61 +993,19 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
                 const errorMsg = searchData.error || 'No search results found.';
                 console.warn('[DriveMode] web_search: no results', errorMsg);
                 
-                // Update placeholder with error result
-                const itemId = callIdToItemIdRef.current.get(callId);
-                if (dc.readyState === 'open' && itemId) {
-                  try {
-                    const updatePayload = {
-                      type: 'conversation.item.update',
-                      item_id: itemId,
-                      item: {
-                        content: [
-                          {
-                            type: 'text',
-                            text: `Web search completed but no results were found. ${errorMsg}`
-                          }
-                        ],
-                        is_error: true
-                      }
-                    };
-                    dc.send(JSON.stringify(updatePayload));
-                    console.log('[DriveMode] ✅ Updated placeholder with no results error');
-                  } catch (updateErr) {
-                    console.error('[DriveMode] Failed to update placeholder with error:', updateErr);
-                    // Fallback: send new result if update fails
-                    const noResultsPayload = {
-                      type: 'conversation.item.create',
-                      item: {
-                        type: 'tool_result',
-                        call_id: callId,
-                        content: [
-                          {
-                            type: 'text',
-                            text: `Web search completed but no results were found. ${errorMsg}`
-                          }
-                        ],
-                        is_error: true
-                      }
-                    };
-                    dc.send(JSON.stringify(noResultsPayload));
-                  }
-                } else if (dc.readyState === 'open') {
-                  // Fallback if no item_id: send new result
-                  const noResultsPayload = {
+                if (dc.readyState === 'open') {
+                  // Send function_call_output with error
+                  dc.send(JSON.stringify({
                     type: 'conversation.item.create',
                     item: {
-                      type: 'tool_result',
+                      type: 'function_call_output',
                       call_id: callId,
-                      content: [
-                        {
-                          type: 'text',
-                          text: `Web search completed but no results were found. ${errorMsg}`
-                        }
-                      ],
-                      is_error: true
+                      output: `Web search completed but no results were found. ${errorMsg}`
                     }
-                  };
-                  dc.send(JSON.stringify(noResultsPayload));
+                  }));
+                  // IMPORTANT: Trigger response generation after function output
+                  dc.send(JSON.stringify({ type: 'response.create' }));
+                  console.log('[DriveMode] ✅ Sent no-results function_call_output and response.create');
                 }
                 return;
               }
@@ -1093,7 +1014,7 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
               const results = searchData.results;
               const resultCount = results.length;
               
-              // Create a concise summary for voice - format more naturally
+              // Create a concise summary for voice
               const summaries: string[] = [];
               results.forEach((result) => {
                 const snippet = result.snippet || '';
@@ -1102,116 +1023,46 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
                 summaries.push(`${result.title || 'Result'}: ${shortSnippet}`);
               });
               
-              // Format as natural language for voice response - more concise
               const formattedResults = summaries.join('\n\n');
               
-              console.log('[DriveMode] Web search completed:', resultCount, 'results');
+              console.log('[DriveMode] ✅ Web search completed:', resultCount, 'results');
               console.log('[DriveMode] Data channel state:', dc.readyState);
-              console.log('[DriveMode] Formatted results length:', formattedResults.length);
               
-              // Update placeholder with real results
-              const itemId = callIdToItemIdRef.current.get(callId);
-              if (dc.readyState === 'open' && itemId) {
-                try {
-                  const updatePayload = {
-                    type: 'conversation.item.update',
-                    item_id: itemId,
-                    item: {
-                      content: [
-                        {
-                          type: 'text',
-                          text: formattedResults
-                        }
-                      ]
-                    }
-                  };
-                  dc.send(JSON.stringify(updatePayload));
-                  console.log('[DriveMode] ✅ Updated placeholder with real search results, item_id:', itemId);
-                  console.log('[DriveMode] Update payload:', JSON.stringify(updatePayload).substring(0, 300));
-                } catch (updateErr) {
-                  console.error('[DriveMode] ❌ Error updating placeholder:', updateErr);
-                  // Fallback: send new result if update fails
-                  const toolResultPayload = {
-                    type: 'conversation.item.create',
-                    item: {
-                      type: 'tool_result',
-                      call_id: callId,
-                      content: [
-                        {
-                          type: 'text',
-                          text: formattedResults
-                        }
-                      ]
-                    }
-                  };
-                  dc.send(JSON.stringify(toolResultPayload));
-                  console.log('[DriveMode] ✅ Fallback: sent new tool result (update failed)');
-                }
+              if (dc.readyState === 'open') {
+                // Send the search results as function_call_output (correct Realtime API format)
+                dc.send(JSON.stringify({
+                  type: 'conversation.item.create',
+                  item: {
+                    type: 'function_call_output',
+                    call_id: callId,
+                    output: formattedResults
+                  }
+                }));
+                console.log('[DriveMode] 📤 Sent function_call_output for call_id:', callId);
+                
+                // IMPORTANT: Request response generation so the model responds with the search results
+                dc.send(JSON.stringify({ type: 'response.create' }));
+                console.log('[DriveMode] 🎤 Sent response.create to trigger AI response with search results');
               } else {
-                // Fallback if no item_id or channel not open: send new result
-                if (dc.readyState === 'open') {
-                  const toolResultPayload = {
-                    type: 'conversation.item.create',
-                    item: {
-                      type: 'tool_result',
-                      call_id: callId,
-                      content: [
-                        {
-                          type: 'text',
-                          text: formattedResults
-                        }
-                      ]
-                    }
-                  };
-                  dc.send(JSON.stringify(toolResultPayload));
-                  console.log('[DriveMode] ✅ Fallback: sent new tool result (no item_id)');
-                } else {
-                  console.error('[DriveMode] ❌ Data channel not open, storing result for later');
-                  pendingToolResultsRef.current.set(callId, { callId, result: formattedResults });
-                }
+                console.error('[DriveMode] ❌ Data channel not open, storing result for later');
+                pendingToolResultsRef.current.set(callId, { callId, result: formattedResults });
               }
             } catch (err) {
               console.error('[DriveMode] web_search: error', err);
-              // Update placeholder with error or send error result
-              const itemId = callIdToItemIdRef.current.get(callId);
               try {
                 if (dc.readyState === 'open') {
-                  if (itemId) {
-                    // Try to update placeholder with error
-                    const updatePayload = {
-                      type: 'conversation.item.update',
-                      item_id: itemId,
-                      item: {
-                        content: [
-                          {
-                            type: 'text',
-                            text: `Error performing web search: ${err instanceof Error ? err.message : 'Unknown error'}. Please try again.`
-                          }
-                        ],
-                        is_error: true
-                      }
-                    };
-                    dc.send(JSON.stringify(updatePayload));
-                    console.log('[DriveMode] ✅ Updated placeholder with error');
-                  } else {
-                    // Fallback: send new error result
-                    const errorPayload = {
-                      type: 'conversation.item.create',
-                      item: {
-                        type: 'tool_result',
-                        call_id: callId,
-                        content: [
-                          {
-                            type: 'text',
-                            text: `Error performing web search: ${err instanceof Error ? err.message : 'Unknown error'}. Please try again.`
-                          }
-                        ],
-                        is_error: true
-                      }
-                    };
-                    dc.send(JSON.stringify(errorPayload));
-                    console.log('[DriveMode] Sending error payload (fallback)');
-                  }
+                  // Send error as function_call_output
+                  dc.send(JSON.stringify({
+                    type: 'conversation.item.create',
+                    item: {
+                      type: 'function_call_output',
+                      call_id: callId,
+                      output: `Error performing web search: ${err instanceof Error ? err.message : 'Unknown error'}. Please try again.`
+                    }
+                  }));
+                  // Trigger response generation
+                  dc.send(JSON.stringify({ type: 'response.create' }));
+                  console.log('[DriveMode] Sent error function_call_output and response.create');
                 }
               } catch (sendErr) {
                 console.error('[DriveMode] Failed to send error result:', sendErr);

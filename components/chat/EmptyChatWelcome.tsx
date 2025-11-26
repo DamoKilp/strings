@@ -11,6 +11,7 @@ import {
   ArrowRight,
   Volume2
 } from 'lucide-react'
+import { StringsIcon } from '@/components/icons/StringsIcon'
 
 interface EmptyChatWelcomeProps {
   onQuickPrompt: (text: string) => void
@@ -66,7 +67,7 @@ export default function EmptyChatWelcome({ onQuickPrompt, onStartDriveMode, clas
           <div className="text-center mb-8 md:mb-10 space-y-3 md:space-y-4 shrink-0">
             <div className="inline-flex items-center justify-center gap-2 mb-4">
               <div className="p-2 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg">
-                <Bot className="w-6 h-6 text-white" />
+                <StringsIcon size={24} className="text-white" fill="white" />
               </div>
               <span className="font-semibold text-lg text-cyan-700 dark:text-cyan-300">AI Assistant Platform</span>
             </div>

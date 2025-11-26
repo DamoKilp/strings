@@ -21,7 +21,8 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url)
-    const limit = parseInt(searchParams.get('limit') || '50', 10)
+    // Default to 200 memories - they're small and provide rich context
+    const limit = parseInt(searchParams.get('limit') || '200', 10)
     const category = searchParams.get('category')
     const minImportance = searchParams.get('minImportance')
 
@@ -104,6 +105,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: err?.message || 'Failed to create memory' }, { status: 500 })
   }
 }
+
 
 
 

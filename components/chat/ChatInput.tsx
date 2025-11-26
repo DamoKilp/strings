@@ -36,6 +36,7 @@ import {
   Table, // NEW: Table icon for table search
   Cog, // NEW: Settings cog for table search settings
   UserCog,
+  Brain, // Memory toggle icon
 } from 'lucide-react';
 import { useInputHeight } from '@/app/hooks/useInputHeight';
 import { DragHandle } from '@/components/chat/DragHandle';
@@ -102,8 +103,8 @@ export function ChatInput({
   onDriveModeToggle,
 }: ChatInputProps) {
   // --- Get state and actions from context ---
-  const { vectorSearchEnabled, tableSearchEnabled, webSearchEnabled, tableSearchSettings, chatFontSize, actions } = useChatContext();
-  const { toggleVectorSearch, toggleTableSearch, toggleWebSearch, setTableSearchSettings, setChatFontSize } = actions;
+  const { vectorSearchEnabled, tableSearchEnabled, webSearchEnabled, memoriesEnabled, tableSearchSettings, chatFontSize, actions } = useChatContext();
+  const { toggleVectorSearch, toggleTableSearch, toggleWebSearch, toggleMemories, setTableSearchSettings, setChatFontSize } = actions;
   // -----------------------------------------
 
   // Ingestion removed
@@ -674,6 +675,32 @@ export function ChatInput({
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
+
+              {/* Memory Toggle - Standout Style */}
+              <TooltipProvider delayDuration={0}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={toggleMemories}
+                      className={`toolbar-btn relative ${
+                        memoriesEnabled 
+                          ? 'toolbar-btn-active text-fuchsia-400 hover:text-fuchsia-300 border border-fuchsia-500/60 bg-fuchsia-900/30 shadow-[0_0_20px_rgba(217,70,239,0.4)] drop-shadow-[0_0_12px_rgba(217,70,239,0.3)] ring-1 ring-fuchsia-500/30' 
+                          : 'text-fuchsia-400/50 hover:text-fuchsia-400/80 border border-transparent hover:border-fuchsia-500/30'
+                      }`}
+                      aria-label="Toggle Memories"
+                    >
+                      <Brain className="toolbar-icon" />
+                      {memoriesEnabled && (
+                        <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-fuchsia-400 rounded-full animate-pulse" />
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" sideOffset={12} className="toolbar-tooltip !bg-slate-900 !text-slate-200 border border-slate-700 pointer-events-none">
+                    <span>{memoriesEnabled ? 'Disable' : 'Enable'} Memories</span>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
             
             {/* Divider */}
@@ -849,6 +876,8 @@ export function ChatInput({
       toggleTableSearch,
       webSearchEnabled,
       toggleWebSearch,
+      memoriesEnabled,
+      toggleMemories,
       tableSearchSettings,
       setTableSearchSettings,
       tableSearchSettingsButton,

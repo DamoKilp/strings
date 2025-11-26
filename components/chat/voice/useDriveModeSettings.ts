@@ -24,9 +24,9 @@ export function getDefaultDriveModeSettings(): DriveModeSettings {
   return {
     language: 'en-US',
     voice: 'coral',
-    // Default to cost-efficient gpt-realtime-mini model; server will fallback if unavailable
-    // gpt-realtime-mini: 32K context, 4K max output tokens, supports function calling
-    model: 'gpt-realtime-mini',
+    // Default to cost-efficient gpt-realtime-mini-2025-10-06 model; server will fallback if unavailable
+    // gpt-realtime-mini-2025-10-06: 32K context, 4K max output tokens, supports function calling
+    model: 'gpt-realtime-mini-2025-10-06',
     bargeInEnabled: true,
     stopIntentEnabled: true,
     wakeLockEnabled: true,

@@ -197,6 +197,7 @@ export interface ChatState {
   vectorSearchEnabled: boolean;
   tableSearchEnabled: boolean; // NEW: Table search toggle state
   webSearchEnabled: boolean; // NEW: Web search toggle state
+  memoriesEnabled: boolean; // Memory feature toggle
   tableSearchSettings: TableSearchSettings; // NEW: Table search configuration
   conversationCursor: string | null;
   hasMoreConversations: boolean;
@@ -236,6 +237,7 @@ export interface ChatActions {
   toggleVectorSearch: () => void;
   toggleTableSearch: () => void; // NEW: Table search toggle action
   toggleWebSearch: () => void; // NEW: Web search toggle action
+  toggleMemories: () => void; // Memory feature toggle action
   setTableSearchSettings: (settings: TableSearchSettings) => void; // NEW: Table search settings action
   loadMoreConversations: () => Promise<void>;
   setChatFontSize: (size: ChatFontSize) => void;

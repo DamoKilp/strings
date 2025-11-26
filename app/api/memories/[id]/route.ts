@@ -9,9 +9,17 @@ export const runtime = 'nodejs'
  */
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
+    // Handle both Next.js 15+ (Promise) and older versions (object)
+    const resolvedParams = params instanceof Promise ? await params : params
+    const memoryId = resolvedParams.id
+
+    if (!memoryId) {
+      return NextResponse.json({ error: 'Memory ID is required' }, { status: 400 })
+    }
+
     const supabase = await createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     
@@ -44,12 +52,17 @@ export async function PATCH(
     if (trackAccess) {
       updateData.last_accessed_at = new Date().toISOString()
       // Increment access count
-      const { data: existing } = await supabase
+      const { data: existing, error: selectError } = await supabase
         .from('memories')
         .select('access_count')
-        .eq('id', params.id)
+        .eq('id', memoryId)
         .eq('user_id', user.id)
         .single()
+      
+      if (selectError) {
+        console.error('[Memories API] Error fetching existing memory:', selectError)
+        return NextResponse.json({ error: selectError.message }, { status: 500 })
+      }
       
       if (existing) {
         updateData.access_count = (existing.access_count || 0) + 1
@@ -63,13 +76,14 @@ export async function PATCH(
     const { data, error } = await supabase
       .from('memories')
       .update(updateData)
-      .eq('id', params.id)
+      .eq('id', memoryId)
       .eq('user_id', user.id)
       .select()
       .single()
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      console.error('[Memories API] Error updating memory:', error)
+      return NextResponse.json({ error: error.message || 'Database error' }, { status: 500 })
     }
 
     if (!data) {
@@ -78,8 +92,9 @@ export async function PATCH(
 
     return NextResponse.json({ memory: data })
   } catch (e: unknown) {
-    const err = e as Error
-    return NextResponse.json({ error: err?.message || 'Failed to update memory' }, { status: 500 })
+    console.error('[Memories API] Unexpected error:', e)
+    const err = e instanceof Error ? e : new Error('Unknown error')
+    return NextResponse.json({ error: err.message || 'Failed to update memory' }, { status: 500 })
   }
 }
 
@@ -89,9 +104,17 @@ export async function PATCH(
  */
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
+    // Handle both Next.js 15+ (Promise) and older versions (object)
+    const resolvedParams = params instanceof Promise ? await params : params
+    const memoryId = resolvedParams.id
+
+    if (!memoryId) {
+      return NextResponse.json({ error: 'Memory ID is required' }, { status: 400 })
+    }
+
     const supabase = await createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     
@@ -102,19 +125,22 @@ export async function DELETE(
     const { error } = await supabase
       .from('memories')
       .delete()
-      .eq('id', params.id)
+      .eq('id', memoryId)
       .eq('user_id', user.id)
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      console.error('[Memories API] Error deleting memory:', error)
+      return NextResponse.json({ error: error.message || 'Database error' }, { status: 500 })
     }
 
     return NextResponse.json({ success: true })
   } catch (e: unknown) {
-    const err = e as Error
-    return NextResponse.json({ error: err?.message || 'Failed to delete memory' }, { status: 500 })
+    console.error('[Memories API] Unexpected error:', e)
+    const err = e instanceof Error ? e : new Error('Unknown error')
+    return NextResponse.json({ error: err.message || 'Failed to delete memory' }, { status: 500 })
   }
 }
+
 
 
 

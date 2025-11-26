@@ -339,6 +339,7 @@ const initialState: ChatState = {
   vectorSearchEnabled: false, // Initialize vector search as DISABLED by default (loaded from localStorage below)
   tableSearchEnabled: false, // Initialize table search as DISABLED by default (loaded from localStorage below)
   webSearchEnabled: false, // Initialize web search as DISABLED by default (loaded from localStorage below)
+  memoriesEnabled: true, // Initialize memories as ENABLED by default (can be toggled off for debugging)
   tableSearchSettings: { // NEW: Initialize with more aggressive defaults
     searchMode: 'custom',
     targetTable: 'all', // NEW: Default to all tables
@@ -418,6 +419,19 @@ export function ChatProvider({ children }: ChatProviderProps) {
         const persisted = JSON.parse(raw);
         if (typeof persisted === 'boolean') {
           setState(prev => ({ ...prev, webSearchEnabled: persisted }));
+        }
+      }
+    } catch {}
+  }, []);
+
+  // Hydrate memories toggle from localStorage on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('ventiaam_memories_enabled');
+      if (raw !== null) {
+        const persisted = JSON.parse(raw);
+        if (typeof persisted === 'boolean') {
+          setState(prev => ({ ...prev, memoriesEnabled: persisted }));
         }
       }
     } catch {}
@@ -1171,8 +1185,9 @@ export function ChatProvider({ children }: ChatProviderProps) {
     }
 
     // --- Fetch and append memories to system prompt ---
+    // Load more memories for richer context - memories are lightweight
     try {
-      const memories = await MemoryService.getMemories({ limit: 20, minImportance: 3 });
+      const memories = await MemoryService.getMemories({ limit: 100, minImportance: 1 });
       if (memories.length > 0) {
         const memoriesText = MemoryService.formatMemoriesForPrompt(memories);
         systemPromptContent = `${systemPromptContent}\n\n${memoriesText}`;
@@ -1343,6 +1358,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           vectorSearchEnabled: state.vectorSearchEnabled, // <<< INCLUDE vectorSearchEnabled
           tableSearchEnabled: effectiveTableSearchEnabled, // NEW: Use ref for latest value (prevents stale closure)
           webSearchEnabled: state.webSearchEnabled, // NEW: Include webSearchEnabled
+          memoriesEnabled: state.memoriesEnabled, // NEW: Include memoriesEnabled
           tableSearchSettings: {
             // NEW: Convert frontend settings to API format
             targetTable: state.tableSearchSettings.targetTable, // NEW: Include target table
@@ -1710,6 +1726,25 @@ export function ChatProvider({ children }: ChatProviderProps) {
     });
   }, []);
 
+  // --- NEW: Implement toggleMemories with persistence ---
+  const toggleMemories = useCallback(() => {
+    setState(prev => {
+      const newState = !prev.memoriesEnabled;
+      
+      console.log(`[Memories] Toggling: ${prev.memoriesEnabled} → ${newState}`);
+      
+      // Persist to localStorage
+      try {
+        localStorage.setItem('ventiaam_memories_enabled', JSON.stringify(newState));
+        console.log(`[Memories] State persisted to localStorage: ${newState}`);
+      } catch (error) {
+        console.error('[Memories] Failed to persist state:', error);
+      }
+
+      return { ...prev, memoriesEnabled: newState };
+    });
+  }, []);
+
   // --- NEW: Implement setTableSearchSettings ---
   const setTableSearchSettings = useCallback((settings: TableSearchSettings) => {
     // Update both local state and persist to localStorage
@@ -1778,6 +1813,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     toggleVectorSearch,
     toggleTableSearch, // NEW: Add table search toggle
     toggleWebSearch, // NEW: Add web search toggle
+    toggleMemories, // NEW: Add memories toggle
     setTableSearchSettings, // NEW: Add table search settings action
     loadMoreConversations, // Add the new action
     setChatFontSize: (size: ChatFontSize) => {
@@ -1829,6 +1865,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
     toggleVectorSearch,
     toggleTableSearch, // NEW: Add table search toggle to dependencies
     toggleWebSearch, // NEW: Add web search toggle to dependencies
+    toggleMemories, // NEW: Add memories toggle to dependencies
     setTableSearchSettings, // NEW: Add table search settings action to dependencies
     loadMoreConversations,
     state.user,

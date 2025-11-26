@@ -4,13 +4,13 @@ import type { LanguageModel } from 'ai'
 import type { LLMModel, LLMModelConfig } from '@/lib/models'
 import { getModelClient } from '@/lib/models'
 import { createClient } from '@/utils/supabase/server'
-import type { JSONSchema7 } from '@ai-sdk/provider'
 
 type ChatApiRequestBody = {
   messages: CoreMessage[]
   model: LLMModel
   parameters?: Record<string, unknown>
   systemPrompt?: string
+  memoriesEnabled?: boolean
 }
 
 function getApiKeyForProvider(providerId: string): string | undefined {
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
   } catch {
     return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400 })
   }
-  const { messages, model, parameters, systemPrompt } = body
+  const { messages, model, parameters, systemPrompt, memoriesEnabled = true } = body
   if (!Array.isArray(messages) || !model?.providerId || !model?.id) {
     return new Response(JSON.stringify({ error: 'Invalid payload' }), { status: 400 })
   }
@@ -55,160 +55,142 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: `Model init failed: ${errorMessage}` }), { status: 500 })
   }
 
-  const encoder = new TextEncoder()
-  const stream = new TransformStream<Uint8Array, Uint8Array>()
-  const writer = stream.writable.getWriter()
-
   const finalMessages: CoreMessage[] = []
   if (systemPrompt?.trim()) finalMessages.push({ role: 'system', content: systemPrompt.trim() })
   finalMessages.push(...messages)
 
-  // Define memory creation tool using raw JSON Schema
-  // NOTE: Currently disabled due to empty response issue with certain models (e.g., GPT-5.1)
-  // The jsonSchema() approach should work but there may be model-specific issues
-  // Voice chat works because it uses a different API (Realtime API) with different tool format
-  const createMemoryJsonSchema: JSONSchema7 = {
-    type: 'object',
-    properties: {
-      content: {
-        type: 'string',
-        description: 'The memory content to store. Should be a clear, concise fact about the user (e.g., "User prefers to be called Sir", "User has two kids: Josh (2007) and Troy (2013)", "User is trying to get back in shape after running a marathon in 2019")'
-      },
-      category: {
-        type: 'string',
-        enum: ['personal', 'work', 'family', 'fitness', 'preferences', 'projects', 'protocol', 'protocols', 'other'],
-        description: 'Category for organizing the memory. Use "protocol" or "protocols" for voice protocols/instructions.'
-      },
-      importance: {
-        type: 'number',
-        minimum: 1,
-        maximum: 10,
-        description: 'Importance level from 1 (low) to 10 (critical). Use 5-7 for general facts, 8-9 for important preferences, 10 for critical information.'
-      }
-    },
-    required: ['content']
-  }
+  // Get authenticated user once for the request
+  const supabase = await createClient()
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
 
+  // Define memory creation tool using jsonSchema helper
   const createMemoryTool = tool({
-    description: 'Store a memory about the user for future conversations. Use this when the user shares personal information, preferences, important facts, or things you should remember about them.',
-    inputSchema: jsonSchema(createMemoryJsonSchema),
+    description: 'Store a memory about the user for future conversations. Use this when the user shares personal information, preferences, important facts, or things you should remember about them. After storing a memory, confirm to the user what was stored.',
+    inputSchema: jsonSchema<{ content: string; category?: string; importance?: number }>({
+      type: 'object',
+      properties: {
+        content: {
+          type: 'string',
+          description: 'The memory content to store. Should be a clear, concise fact about the user.'
+        },
+        category: {
+          type: 'string',
+          enum: ['personal', 'work', 'family', 'fitness', 'preferences', 'projects', 'protocol', 'protocols', 'other'],
+          description: 'Category for organizing the memory.'
+        },
+        importance: {
+          type: 'number',
+          description: 'Importance level from 1 (low) to 10 (critical).'
+        }
+      },
+      required: ['content']
+    }),
     execute: async ({ content, category, importance }: { content: string; category?: string; importance?: number }) => {
+      console.log('[Chat API] create_memory tool called:', { content, category, importance })
       try {
-        // Get authenticated user
-        const supabase = await createClient()
-        const { data: { user }, error: authError } = await supabase.auth.getUser()
-        
         if (authError || !user) {
-          return { success: false, error: 'Unauthorized' }
+          console.log('[Chat API] create_memory: Unauthorized')
+          return { success: false, error: 'Unauthorized - please sign in to save memories' }
         }
 
-        // Create memory via API
-        const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/memories`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        const importanceValue = importance 
+          ? Math.max(1, Math.min(10, importance))
+          : 5
+
+        // Create memory directly via Supabase
+        const { data, error } = await supabase
+          .from('memories')
+          .insert({
+            user_id: user.id,
             content: content.trim(),
             category: category || null,
-            importance: importance || 5
+            importance: importanceValue,
           })
-        })
+          .select()
+          .single()
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ error: 'Failed to create memory' }))
-          return { success: false, error: errorData.error || 'Failed to create memory' }
+        if (error) {
+          console.log('[Chat API] create_memory: DB error', error.message)
+          return { success: false, error: error.message }
         }
 
-        const data = await response.json()
+        console.log('[Chat API] create_memory: Success', data?.id)
         return { 
           success: true, 
-          message: `Memory stored successfully: "${content}"`,
-          memoryId: data.memory?.id 
+          message: `Memory stored: "${content}"`,
+          memoryId: data?.id 
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        console.error('[Chat API] create_memory: Exception', errorMessage)
         return { success: false, error: errorMessage }
       }
     }
   })
 
-  // Tool is now properly defined using jsonSchema() to avoid Zod serialization bug
-  // Re-enabled with comprehensive logging to debug tool execution
-  let result
-  try {
-    result = await streamText({ 
-      model: languageModel, 
-      messages: finalMessages, 
-      tools: {
-        create_memory: createMemoryTool
-      },
-      ...(parameters || {}) 
-    })
-    
-    // Log tool-related information from result
-    console.log('[Chat API] streamText result:', {
-      hasTextStream: !!result.textStream,
-      hasToolCalls: 'toolCalls' in result,
-      hasFullStream: 'fullStream' in result,
-    })
-  } catch (error) {
-    console.error('[Chat API] Error with tools:', error)
-    if (error instanceof Error) {
-      console.error('[Chat API] Error details:', error.message, error.stack)
-    }
-    // Fallback to chat without tools
-    result = await streamText({ 
-      model: languageModel, 
-      messages: finalMessages, 
-      ...(parameters || {}) 
-    })
-  }
+  // Stream the response manually (compatible with client's 0: prefix parser)
+  const encoder = new TextEncoder()
+  const stream = new TransformStream<Uint8Array, Uint8Array>()
+  const writer = stream.writable.getWriter()
 
+  // Start streaming in the background
   ;(async () => {
     try {
-      let chunkCount = 0
+      // Only include memory tool if memories are enabled
+      const tools = memoriesEnabled ? { create_memory: createMemoryTool } : undefined
       
-      // Stream text deltas - the Vercel AI SDK automatically handles tool execution
-      // Tool calls and results are included in the stream automatically
-      for await (const chunk of result.textStream) {
-        chunkCount++
-        await writer.write(encoder.encode(`0:${JSON.stringify(chunk)}\n`))
-      }
-      
-      // After streaming, check for tool calls in the result
-      // Note: Tool execution happens automatically during streaming
-      if ('toolCalls' in result && Array.isArray(result.toolCalls)) {
-        console.log('[Chat API] Tool calls detected:', result.toolCalls.length)
-        result.toolCalls.forEach((toolCall: any) => {
-          console.log('[Chat API] Tool call:', toolCall.toolName, toolCall.args)
-        })
-      }
-      
-      // Log summary
-      console.log('[Chat API] Stream complete:', {
-        chunkCount,
-        empty: chunkCount === 0,
-        hasToolCalls: 'toolCalls' in result && Array.isArray(result.toolCalls) && result.toolCalls.length > 0
-      })
-      
-      if (chunkCount === 0) {
-        console.warn('[Chat API] No chunks received from stream - empty response')
-        // Even if text is empty, tool execution might have happened
-        if ('toolCalls' in result && Array.isArray(result.toolCalls) && result.toolCalls.length > 0) {
-          console.log('[Chat API] Empty text but tools were called - this is expected behavior')
+      const result = streamText({ 
+        model: languageModel, 
+        messages: finalMessages, 
+        ...(tools && { tools }),
+        // Continue until the model responds with text (no more tool calls)
+        // Check the LAST step's finish reason - stop when it's 'stop' (text completion)
+        stopWhen: ({ steps }: { steps: any[] }) => {
+          const lastStep = steps[steps.length - 1];
+          console.log('[Chat API] stopWhen check:', { 
+            stepCount: steps.length, 
+            lastFinishReason: lastStep?.finishReason 
+          });
+          // Stop when the last step finished with 'stop' (text) rather than 'tool-calls'
+          return lastStep?.finishReason === 'stop';
+        },
+        maxSteps: 5, // Safety limit
+        ...(parameters || {})
+      } as any)
+
+      // Use fullStream to capture both text and tool events
+      // This ensures we see tool calls and their results
+      for await (const part of result.fullStream) {
+        if (part.type === 'text-delta') {
+          // Only stream non-empty text deltas (AI SDK v5 uses 'text' property)
+          const textContent = (part as any).text || (part as any).textDelta
+          if (textContent) {
+            await writer.write(encoder.encode(`0:${JSON.stringify(textContent)}\n`))
+          }
+        } else if (part.type === 'tool-call') {
+          console.log('[Chat API] Tool call:', part.toolName, JSON.stringify(part))
+        } else if (part.type === 'tool-result') {
+          console.log('[Chat API] Tool result:', part.toolName, JSON.stringify(part))
+        } else if (part.type === 'error') {
+          console.error('[Chat API] Stream part error:', (part as any).error)
+        } else if ((part as any).type === 'step-finish') {
+          console.log('[Chat API] Step finished:', (part as any).finishReason)
         }
       }
-    } catch (err: unknown) {
+    } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'stream error'
-      console.error('[Chat API] Stream error:', errorMessage, err)
-      try { await writer.write(encoder.encode(`3:${JSON.stringify({ error: errorMessage })}\n`)) } catch {}
+      console.error('[Chat API] Stream error:', errorMessage)
+      try { 
+        await writer.write(encoder.encode(`3:${JSON.stringify({ error: errorMessage })}\n`)) 
+      } catch {}
     } finally {
       try { await writer.close() } catch {}
     }
   })()
 
-  const headers = new Headers()
-  headers.set('Content-Type', 'text/plain; charset=utf-8')
-  return new Response(stream.readable, { headers })
+  return new Response(stream.readable, {
+    headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+  })
 }
 
 

@@ -19,7 +19,7 @@ interface WebSearchResponse {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { query, maxResults = 5 } = body;
+    const { query, maxResults = 5, searchType = 'general' } = body;
 
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
       return NextResponse.json(
@@ -29,23 +29,36 @@ export async function POST(req: NextRequest) {
     }
 
     const searchQuery = query.trim();
-    console.log('[WebSearch] Searching for:', searchQuery);
+    const isNewsSearch = searchType === 'news' || 
+      /\b(news|headlines|latest|today|current events|breaking)\b/i.test(searchQuery);
+    
+    console.log('[WebSearch] Searching for:', searchQuery, '| Type:', isNewsSearch ? 'news' : 'general');
 
     // Try Tavily API first (if configured)
     const tavilyApiKey = process.env.TAVILY_API_KEY;
     if (tavilyApiKey) {
       try {
+        // Configure Tavily parameters based on search type
+        const tavilyParams: Record<string, unknown> = {
+          api_key: tavilyApiKey,
+          query: searchQuery,
+          max_results: maxResults,
+          search_depth: 'advanced', // Use advanced for better results
+          include_answer: true, // Get a direct answer summary
+        };
+        
+        // For news searches, add news-specific parameters
+        if (isNewsSearch) {
+          tavilyParams.topic = 'news'; // Focus on news sources
+          tavilyParams.days = 3; // Only include results from last 3 days
+        }
+        
         const tavilyResponse = await fetch('https://api.tavily.com/search', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            api_key: tavilyApiKey,
-            query: searchQuery,
-            max_results: maxResults,
-            search_depth: 'basic',
-          }),
+          body: JSON.stringify(tavilyParams),
         });
 
         if (tavilyResponse.ok) {
@@ -55,8 +68,20 @@ export async function POST(req: NextRequest) {
             url: r.url || '',
             snippet: r.content || r.snippet || '',
           }));
+          
+          // If Tavily provided a direct answer, prepend it to results for voice consumption
+          const answer = tavilyData.answer;
+          if (answer && typeof answer === 'string') {
+            console.log('[WebSearch] Tavily answer:', answer.substring(0, 100) + '...');
+            // Add the answer as a special first result
+            results.unshift({
+              title: 'Summary',
+              url: '',
+              snippet: answer,
+            });
+          }
 
-          console.log('[WebSearch] Tavily search completed:', results.length, 'results');
+          console.log('[WebSearch] Tavily search completed:', results.length, 'results', isNewsSearch ? '(news mode)' : '');
           return NextResponse.json({ success: true, results });
         }
       } catch (err) {
@@ -156,5 +181,6 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
 
 
