@@ -31,6 +31,8 @@ import { prePrompts } from '@/components/data/prePrompts';
 // --- ADDED: Import useVirtualizer hook for virtualization ---
 import { useVirtualizer } from '@tanstack/react-virtual';
 import EmptyChatWelcome from '@/components/chat/EmptyChatWelcome';
+import { RoutinesBar } from '@/components/chat/RoutinesBar';
+import { HabitTrackerDialog } from '@/components/chat/HabitTrackerDialog';
 import AgentManagerDialog from '@/components/chat/AgentManagerDialog';
 import { toast } from 'sonner';
 
@@ -96,7 +98,8 @@ export function ChatInterface() {
       setLLMModel,
       stopGenerating,
       setSelectedPrePromptId,          // ADDED: Get action from context
-      deleteMessage
+      deleteMessage,
+      runRoutine
     }
   } = useChatContext();
   // ----------------------------------------
@@ -119,6 +122,7 @@ export function ChatInterface() {
   const [driveModeActiveModel, setDriveModeActiveModel] = useState<string>('');
   const [driveModeRestart, setDriveModeRestart] = useState(0); // Counter to force restart
   const [isAgentManagerOpen, setIsAgentManagerOpen] = useState(false);
+  const [habitDialogOpen, setHabitDialogOpen] = useState(false);
   
 
   // Lazy load voice overlay and session component only when needed
@@ -386,6 +390,40 @@ export function ChatInterface() {
     setDriveModeRestart(prev => prev + 1);
     setDriveModeStatus('Switching model…');
     setDriveModeActiveModel('');
+  }, []);
+
+  const handleMorningBriefingRun = useCallback(() => {
+    runRoutine('morning_briefing');
+  }, [runRoutine]);
+
+  const handleWeeklyReviewRun = useCallback(() => {
+    runRoutine('weekly_review');
+  }, [runRoutine]);
+
+  const handleProactiveCheckinRun = useCallback(() => {
+    runRoutine('proactive_checkin');
+  }, [runRoutine]);
+
+  const handleOpenHabitTracker = useCallback(() => {
+    setHabitDialogOpen(true);
+  }, []);
+
+  const handleConnectCalendar = useCallback(async () => {
+    try {
+      const res = await fetch('/api/integrations/google/auth-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ redirectTo: '/' }),
+      });
+      if (!res.ok) throw new Error('Failed to initiate Google OAuth');
+      const data = await res.json();
+      if (data?.url) {
+        window.location.href = data.url;
+      }
+    } catch (error) {
+      console.error('[ChatInterface] connectCalendar error', error);
+      toast.error('Calendar connection failed', { description: 'Please try again in a moment.' });
+    }
   }, []);
 
   const handleQuickPrompt = useCallback((text: string) => {
@@ -740,6 +778,9 @@ export function ChatInterface() {
       key={activeConversationId || 'new-chat-interface'} // Force re-render on conversation change
     >
       {/** Reduce reserved bottom space when there are no messages to make the welcome fit better */}
+      <div className="px-2 sm:px-4 pt-2">
+        {sortedMessages.length > 0 && <RoutinesBar onStartDriveMode={handleDriveModeToggle} />}
+      </div>
       {/* Main Content Area (Messages + Code Panel) */}
       <div className="flex-1 overflow-hidden relative bg-transparent">
         <ResizableSplitView
@@ -759,10 +800,15 @@ export function ChatInterface() {
           >
             {/* Empty state welcome when there are no messages and not loading */}
             {sortedMessages.length === 0 && !isLoadingMessages && (
-              <div className="absolute inset-0 flex items-center justify-center px-3">
+              <div className="flex items-start justify-center px-3 pt-2 pb-4 min-h-full">
                 <EmptyChatWelcome
                   onQuickPrompt={handleQuickPrompt}
                   onStartDriveMode={handleDriveModeToggle}
+                  onRunMorningBriefing={handleMorningBriefingRun}
+                  onRunWeeklyReview={handleWeeklyReviewRun}
+                  onRunProactiveCheckin={handleProactiveCheckinRun}
+                  onOpenHabitTracker={handleOpenHabitTracker}
+                  onConnectCalendar={handleConnectCalendar}
                 />
               </div>
             )}
@@ -970,6 +1016,9 @@ export function ChatInterface() {
           />
         </>
       )}
+
+      {/* Habit Tracker dialog (shared entry point for home screen) */}
+      <HabitTrackerDialog open={habitDialogOpen} onOpenChange={setHabitDialogOpen} />
 
       {/* Agent Manager Dialog (two-pane) */}
       <AgentManagerDialog

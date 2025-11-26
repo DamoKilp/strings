@@ -6,7 +6,7 @@ import { useDriveModeSettings } from './useDriveModeSettings';
 import { getPrePromptById, getDefaultPrePrompt } from '@/components/data/prePrompts';
 import { MemoryService } from '@/lib/memoryService';
 import { storageService } from '@/lib/storageService';
-import type { ChatMessage, ConversationSummary } from '@/lib/types';
+import type { ChatMessage, ConversationSummary, AssistantRoutineType } from '@/lib/types';
 
 // Module-scoped lock to avoid duplicate realtime sessions (e.g., StrictMode effects)
 let __driveModeRealtimeLock = false;
@@ -86,7 +86,15 @@ function convertPrePromptToVoiceInstructions(prePromptContent: string): string {
 • NEVER use American pronunciation or expressions
 • Use British phrases: "rather", "quite", "lovely", "darling", "brilliant", "I must say"
 • Be moderately flirty, witty with dry British humour, sympathetic, and encouraging
-• Keep responses concise but charming for voice conversation`;
+• Keep responses concise but charming for voice conversation
+
+**KNOW YOUR CAPABILITIES (tell user when asked "what can you do?"):**
+1. Memories - remember & recall facts about the user
+2. Protocols - run saved voice routines
+3. Web Search - search internet for ANY topic (sports, news, weather, facts, research)
+4. Conversation History - search past chats
+5. Code Projects - access user's repositories (Strings, VentiAAM), read files, see git history, search code
+6. Update 2.0 Features - Morning Briefing, Habit Tracker, Proactive Check-ins, Google Calendar, Weekly Review`;
   
   // Combine cleaned content with voice instructions and personal context
   // Voice identity goes FIRST to ensure it's always followed
@@ -144,6 +152,49 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
       if (typeof (o as { input_text?: unknown }).input_text === 'string') return String((o as { input_text?: unknown }).input_text);
     } catch {}
     return null;
+  }, []);
+  const narrateRoutine = useCallback((type: AssistantRoutineType, payload: unknown) => {
+    const dc = dcRef.current;
+    if (!dc || dc.readyState !== 'open') return;
+    let instructions: string | null = null;
+    if (type === 'morning_briefing') {
+      const data = payload as {
+        summary?: string;
+        weather?: { description?: string; temperature?: number | null };
+        events?: Array<{ title?: string; start?: string }>;
+      };
+      const lines: string[] = [];
+      if (data?.summary) lines.push(`Morning briefing: ${data.summary}`);
+      if (data?.weather?.description) {
+        const temp = typeof data.weather.temperature === 'number' ? `${data.weather.temperature}°C` : '';
+        lines.push(`Weather update: ${data.weather.description}${temp ? ` at ${temp}` : ''}.`);
+      }
+      if (Array.isArray(data?.events) && data.events.length > 0) {
+        const topEvents = data.events.slice(0, 3).map((event) => {
+          const start = event?.start ? new Date(event.start).toLocaleTimeString('en-AU', { timeStyle: 'short' }) : 'soon';
+          return `${event?.title ?? 'Untitled'} at ${start}`;
+        });
+        lines.push(`Upcoming events: ${topEvents.join('; ')}.`);
+      }
+      instructions = lines.join('\n');
+    } else if (type === 'weekly_review') {
+      const data = payload as { summary?: string; highlights?: string[]; focusAreas?: string[] };
+      const lines: string[] = [];
+      if (data?.summary) lines.push(`Weekly review: ${data.summary}`);
+      if (Array.isArray(data?.highlights) && data.highlights.length) {
+        lines.push(`Highlights: ${data.highlights.join('; ')}`);
+      }
+      if (Array.isArray(data?.focusAreas) && data.focusAreas.length) {
+        lines.push(`Suggested focus areas: ${data.focusAreas.join('; ')}`);
+      }
+      instructions = lines.join('\n');
+    } else if (type === 'proactive_checkin' || type === 'habit_checkin') {
+      const data = payload as { prompt?: string };
+      instructions = data?.prompt ?? 'Checking in. How did everything go?';
+    }
+    if (instructions) {
+      dc.send(JSON.stringify({ type: 'response.create', response: { instructions } }));
+    }
   }, []);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -572,11 +623,14 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
             const conversationSearchInstructions = `\n\n**Previous Conversations:**\nYou have access to a search_conversations tool that searches through ALL previous conversations (both text and voice chats) with the user. Use this when:\n- The user asks "what did we talk about", "remember when we discussed", "look at our previous conversations"\n- The user wants to find a specific past conversation or topic\n- The user references something from a previous chat\n\nThis searches the full conversation history stored in the database, so you can find any past discussion.`;
             
             // Add code/project tools instructions
-            const codeToolsInstructions = `\n\n**Code & Project Tools (ACCESS TO USER'S REPOSITORIES):**\nYou have access to the user's code projects! Use these tools when discussing their apps:\n\n1. **get_project_info** - Get overview of a project (README, dependencies, structure)\n   - Use projectPath="strings" for the Strings app\n   - Use projectPath="ventiaam" for the Asset Management app\n   - Or use full path like "C:/Users/venti/NextJS_Projects/strings"\n\n2. **read_code_file** - Read specific code files\n   - Use with filePath (relative to project) and optional projectPath\n   - Example: filePath="components/chat/voice/DriveModeVoiceChat.tsx", projectPath="strings"\n\n3. **git_recent_changes** - See recent commits and uncommitted changes\n   - Shows branch, recent commits, and current changes\n   - Great for "what have I been working on" questions\n\n4. **search_code** - Search for text/patterns in code\n   - Use when user asks "where is X defined", "find usages of Y"\n   - Example: query="handleWebSearch", projectPath="strings"\n\n**Known Projects:**\n- "strings" = The Strings chat app (this app!)\n- "ventiaam" = The Asset Management app`;
+            const codeToolsInstructions = `\n\n**Code & Project Tools (ACCESS TO USER'S REPOSITORIES):**\nYou have access to the user's code projects! Use these tools when discussing their apps. The user often forgets the exact tool names, so gently remind them what you can do in natural language (for example, say \"I can look through your Strings code for you\" rather than expecting them to remember function names).\n\n**CRITICAL: When the user asks about "coding tools", "github tools", "what tools do you have for code", "what can you do with my code", or similar questions, you MUST list ALL of these tools by name and what they do:**\n\n1. **get_project_info** - Get overview of a project (README, dependencies, structure)\n   - Use projectPath="strings" for the Strings app\n   - Use projectPath="ventiaam" for the Asset Management app\n   - Or use full path like "C:/Users/venti/NextJS_Projects/strings"\n\n2. **read_code_file** - Read specific code files\n   - Use with filePath (relative to project) and optional projectPath\n   - Example: filePath="components/chat/voice/DriveModeVoiceChat.tsx", projectPath="strings"\n\n3. **git_recent_changes** - See recent commits and uncommitted changes\n   - Shows branch, recent commits, and current changes\n   - Great for "what have I been working on" questions\n\n4. **search_code** - Search for text/patterns in code\n   - Use when user asks "where is X defined", "find usages of Y"\n   - Example: query="handleWebSearch", projectPath="strings"\n\n**Known Projects:**\n- "strings" = The Strings chat app (this app!)\n- "ventiaam" = The Asset Management app\n\nWhen asked about coding or GitHub tools, always provide the complete list with descriptions - don't just say "I have code tools" generically!`;
+            
+            // Add Update 2.0 features instructions
+            const update20Instructions = `\n\n**UPDATE 2.0 FEATURES - NEW ASSISTANT CAPABILITIES:**\nThe app has been updated with Update 2.0, which includes five powerful new features. When the user asks "what features are available", "tell me about recent updates", "explain update 2.0", "what's new in the app", "what features can I use", or similar questions, you MUST explain these features in simple, friendly, conversational terms:\n\n1. **Morning Briefing** - I can give you a personalised morning summary that includes:\n   - Your recent memories and important things I've learned about you\n   - Today's weather forecast\n   - Your upcoming calendar events (if you've connected Google Calendar)\n   - Your active habits that need attention\n   Just ask me for a "morning briefing" or say "give me my morning update" and I'll compile everything for you!\n\n2. **Habit Tracker** - I can help you track and build good habits! You can:\n   - Create habits you want to maintain (like "exercise daily" or "read for 30 minutes")\n   - I'll remind you about them and help you log when you complete them\n   - Track your streaks and progress over time\n   - Set up daily or weekly habits with custom reminder times\n   Say "show me my habits" or "help me track a habit" to get started!\n\n3. **Proactive Check-ins** - I can automatically check in with you at smart times:\n   - After important calendar events (like "How did your meeting go?")\n   - At scheduled intervals to see how you're doing\n   - I'll ask thoughtful questions to help you reflect and capture important moments\n   You can enable this in your routine settings, and I'll reach out when it makes sense!\n\n4. **Google Calendar Integration** - I can connect to your Google Calendar to:\n   - See your upcoming events and appointments\n   - Reference your schedule in our conversations\n   - Personalise check-ins based on what you have coming up\n   - Include calendar events in your morning briefings\n   Just connect your calendar once, and I'll keep it in mind for all our chats!\n\n5. **Weekly Review** - Every week, I can give you a helpful summary:\n   - What habits you've maintained well (highlights!)\n   - Areas where you might want to focus more attention\n   - A personalised summary of your week's progress\n   - Suggestions for the week ahead\n   Ask for a "weekly review" and I'll analyse your week and give you insights!\n\n**How to use Update 2.0 features:**\n- You can trigger these features by asking me directly (e.g., "give me a morning briefing", "show my habits", "weekly review")\n- In the text chat interface, there's a Routines Bar with buttons for quick access\n- Some features (like proactive check-ins) work automatically once enabled\n- All features work in both voice and text chat - just ask naturally!\n\nWhen explaining these features, be enthusiastic and helpful! Use simple language, give practical examples, and explain how they help the user in their daily life. Speak naturally as Victoria with your British charm!`;
             
             const instructions = parts.length > 0
-              ? `${parts.join('\n\n')}${memoryToolInstructions}${voiceCommandInstructions}${webSearchInstructions}${conversationSearchInstructions}${codeToolsInstructions}`
-              : `${languageInstruction}\n\nYou are a helpful AI assistant in a real-time voice conversation. Speak naturally, keep responses concise, and vary your phrasing to avoid repetition.${memoryToolInstructions}${voiceCommandInstructions}${webSearchInstructions}${conversationSearchInstructions}${codeToolsInstructions}`;
+              ? `${parts.join('\n\n')}${memoryToolInstructions}${voiceCommandInstructions}${webSearchInstructions}${conversationSearchInstructions}${codeToolsInstructions}${update20Instructions}`
+              : `${languageInstruction}\n\nYou are a helpful AI assistant in a real-time voice conversation. Speak naturally, keep responses concise, and vary your phrasing to avoid repetition.${memoryToolInstructions}${voiceCommandInstructions}${webSearchInstructions}${conversationSearchInstructions}${codeToolsInstructions}${update20Instructions}`;
             
             // Add memory creation, protocol retrieval, and web search tools to session
             const tools = [
@@ -1651,7 +1705,7 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
               }
               
               // If query provided, search through conversation messages
-              let results: Array<{ title: string; date: string; preview: string }> = [];
+              const results: Array<{ title: string; date: string; preview: string }> = [];
               
               if (searchInput.query && searchInput.query.trim()) {
                 const queryLower = searchInput.query.toLowerCase();
@@ -2230,6 +2284,75 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
       sessionEstablishedRef.current = false;
     };
   }, [effectiveModel, effectiveVoice, settings.language, settings.audioInputDeviceId, settings.audioOutputDeviceId, settings.autoGreetEnabled, settings.greetingText, settings.bargeInEnabled, settings.stopIntentEnabled, settings.wakeLockEnabled, settings.exclusiveAudioFocus, settings.voiceOptimizedAudio, settings.sampleRate, extractCandidateText, selectedPrePromptId]);
+
+  useEffect(() => {
+    const handler = async (event: Event) => {
+      const detail = (event as CustomEvent<{ type: AssistantRoutineType }>).detail;
+      if (!detail?.type) return;
+      const endpoints: Record<AssistantRoutineType, string> = {
+        morning_briefing: '/api/assistant/routines/morning-briefing',
+        weekly_review: '/api/assistant/routines/weekly-review',
+        proactive_checkin: '/api/assistant/routines/checkins',
+        habit_checkin: '/api/assistant/routines/checkins',
+      };
+      const endpoint = endpoints[detail.type];
+      if (!endpoint) return;
+      try {
+        const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+        if (!res.ok) return;
+        const data = await res.json();
+        narrateRoutine(detail.type, data);
+      } catch (error) {
+        console.error('[DriveModeVoiceChat] routine narration failed', error);
+      }
+    };
+    window.addEventListener('drive-mode-run-routine', handler as EventListener);
+    return () => window.removeEventListener('drive-mode-run-routine', handler as EventListener);
+  }, [narrateRoutine]);
+
+  // Listen for custom text prompts to send after drive mode starts
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ prompt: string }>).detail;
+      if (!detail?.prompt) return;
+      
+      const dc = dcRef.current;
+      if (!dc || dc.readyState !== 'open') {
+        // If data channel not ready, wait a bit and try again
+        setTimeout(() => {
+          const retryDc = dcRef.current;
+          if (retryDc && retryDc.readyState === 'open') {
+            retryDc.send(JSON.stringify({
+              type: 'conversation.item.create',
+              item: {
+                type: 'input_text',
+                text: detail.prompt
+              }
+            }));
+            retryDc.send(JSON.stringify({ type: 'response.create' }));
+          }
+        }, 500);
+        return;
+      }
+      
+      // Send the prompt as text input
+      try {
+        dc.send(JSON.stringify({
+          type: 'conversation.item.create',
+          item: {
+            type: 'input_text',
+            text: detail.prompt
+          }
+        }));
+        dc.send(JSON.stringify({ type: 'response.create' }));
+      } catch (error) {
+        console.error('[DriveModeVoiceChat] Failed to send prompt', error);
+      }
+    };
+    
+    window.addEventListener('drive-mode-send-prompt', handler as EventListener);
+    return () => window.removeEventListener('drive-mode-send-prompt', handler as EventListener);
+  }, []);
 
 // (helper now in useCallback above)
 

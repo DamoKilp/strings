@@ -13,6 +13,46 @@ type ChatApiRequestBody = {
   memoriesEnabled?: boolean
 }
 
+type ProjectInfoResult = {
+  projectPath: string
+  readme: string | null
+  packageJson: {
+    name?: string
+    version?: string
+    description?: string
+    scripts?: string[]
+    dependencies?: string[]
+    devDependencies?: string[]
+  } | null
+  structure: {
+    name: string
+    type: 'dir' | 'file'
+  }[]
+}
+
+type ReadCodeFileResult = {
+  path: string
+  content: string
+  size: number
+}
+
+type GitRecentChangesResult = {
+  branch: string
+  recentCommits: string[]
+  uncommittedChanges: string[]
+}
+
+type SearchCodeMatch = {
+  file: string
+  match: string
+}
+
+type SearchCodeResult = {
+  query: string
+  matchCount: number
+  matches: SearchCodeMatch[]
+}
+
 function getApiKeyForProvider(providerId: string): string | undefined {
   const env: Record<string, string> = {
     openai: 'OPENAI_API_KEY',
@@ -62,6 +102,35 @@ export async function POST(req: NextRequest) {
   // Get authenticated user once for the request
   const supabase = await createClient()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+  const codeToolsUrl = new URL('/api/code-tools', req.url)
+
+  async function callCodeTool<TResult>(
+    action: 'get_project_info' | 'read_code_file' | 'git_recent_changes' | 'search_code',
+    input: Record<string, unknown>
+  ): Promise<{ success: boolean; result?: TResult; error?: string }> {
+    try {
+      const response = await fetch(codeToolsUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ...input }),
+      })
+
+      const data = await response.json() as { success?: boolean; result?: TResult; error?: string }
+
+      if (!response.ok || !data?.success) {
+        const errorMessage = data?.error || `Code tool "${action}" failed with status ${response.status}`
+        console.error('[Chat API] code tool error', { action, status: response.status, error: errorMessage })
+        return { success: false, error: errorMessage }
+      }
+
+      return { success: true, result: data.result }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      console.error('[Chat API] code tool exception', { action, error: errorMessage })
+      return { success: false, error: errorMessage }
+    }
+  }
 
   // Define memory creation tool using jsonSchema helper
   const createMemoryTool = tool({
@@ -128,6 +197,103 @@ export async function POST(req: NextRequest) {
     }
   })
 
+  // Code/Git tools that proxy through the /api/code-tools route
+  const getProjectInfoTool = tool({
+    description: 'Get information about a local code project (README excerpt, package.json summary, and top-level structure). Use when the user asks about their apps or repositories like "Strings" or "VentiaAM".',
+    inputSchema: jsonSchema<{ projectPath: string }>({
+      type: 'object',
+      properties: {
+        projectPath: {
+          type: 'string',
+          description: 'Path or shortcut for the project. Use "strings" for the Strings app, "ventiaam" for the Asset Management app, or an absolute path on disk.',
+        }
+      },
+      required: ['projectPath']
+    }),
+    execute: async ({ projectPath }: { projectPath: string }) => {
+      return callCodeTool<ProjectInfoResult>('get_project_info', { projectPath })
+    }
+  })
+
+  const readCodeFileTool = tool({
+    description: 'Read a specific code file from a local project. Use when the user asks about specific files, components, or code.',
+    inputSchema: jsonSchema<{ filePath: string; projectPath?: string }>({
+      type: 'object',
+      properties: {
+        filePath: {
+          type: 'string',
+          description: 'Path to the file to read. Can be relative to a project or an absolute path.',
+        },
+        projectPath: {
+          type: 'string',
+          description: 'Optional project base path. If provided, filePath is treated as relative to this path (e.g., "strings").',
+        }
+      },
+      required: ['filePath']
+    }),
+    execute: async ({ filePath, projectPath }: { filePath: string; projectPath?: string }) => {
+      const payload: Record<string, unknown> = { filePath }
+      if (projectPath && projectPath.trim()) {
+        payload.projectPath = projectPath.trim()
+      }
+      return callCodeTool<ReadCodeFileResult>('read_code_file', payload)
+    }
+  })
+
+  const gitRecentChangesTool = tool({
+    description: 'Get recent git commits and current uncommitted changes for a project. Use when the user asks what they have been working on recently.',
+    inputSchema: jsonSchema<{ projectPath: string; limit?: number }>({
+      type: 'object',
+      properties: {
+        projectPath: {
+          type: 'string',
+          description: 'Path or shortcut for the git repository (for example "strings" or "ventiaam").',
+        },
+        limit: {
+          type: 'number',
+          description: 'Optional number of recent commits to return (default is 10).',
+        }
+      },
+      required: ['projectPath']
+    }),
+    execute: async ({ projectPath, limit }: { projectPath: string; limit?: number }) => {
+      const payload: Record<string, unknown> = { projectPath }
+      if (typeof limit === 'number') {
+        payload.limit = limit
+      }
+      return callCodeTool<GitRecentChangesResult>('git_recent_changes', payload)
+    }
+  })
+
+  const searchCodeTool = tool({
+    description: 'Search for text or simple patterns in code files within a project. Use when the user asks where something is defined or to find usages.',
+    inputSchema: jsonSchema<{ query: string; projectPath: string; filePattern?: string }>({
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'The text or pattern to search for in code files.',
+        },
+        projectPath: {
+          type: 'string',
+          description: 'Path or shortcut for the project to search in (for example "strings").',
+        },
+        filePattern: {
+          type: 'string',
+          description: 'Optional file glob pattern to narrow the search (e.g., "*.tsx,*.ts"). Defaults to common code files.',
+        }
+      },
+      required: ['query', 'projectPath']
+    }),
+    execute: async ({ query, projectPath, filePattern }: { query: string; projectPath: string; filePattern?: string }) => {
+      const payload: Record<string, unknown> = { query, projectPath }
+      if (filePattern && filePattern.trim()) {
+        payload.filePattern = filePattern.trim()
+      }
+      return callCodeTool<SearchCodeResult>('search_code', payload)
+    }
+  })
+
   // Stream the response manually (compatible with client's 0: prefix parser)
   const encoder = new TextEncoder()
   const stream = new TransformStream<Uint8Array, Uint8Array>()
@@ -136,13 +302,21 @@ export async function POST(req: NextRequest) {
   // Start streaming in the background
   ;(async () => {
     try {
-      // Only include memory tool if memories are enabled
-      const tools = memoriesEnabled ? { create_memory: createMemoryTool } : undefined
+      const tools: Record<string, unknown> = {
+        get_project_info: getProjectInfoTool,
+        read_code_file: readCodeFileTool,
+        git_recent_changes: gitRecentChangesTool,
+        search_code: searchCodeTool,
+      }
+
+      if (memoriesEnabled) {
+        tools.create_memory = createMemoryTool
+      }
       
       const result = streamText({ 
         model: languageModel, 
         messages: finalMessages, 
-        ...(tools && { tools }),
+        tools,
         // Continue until the model responds with text (no more tool calls)
         // Check the LAST step's finish reason - stop when it's 'stop' (text completion)
         stopWhen: ({ steps }: { steps: any[] }) => {

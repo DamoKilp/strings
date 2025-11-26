@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import dynamic from 'next/dynamic';
 import { Mic, RotateCcw } from 'lucide-react';
 import { useDriveModeSettings } from './useDriveModeSettings';
+import { useChatContext } from '@/components/contexts/ChatProvider';
+import type { AssistantRoutineType } from '@/lib/types';
 
 export interface DriveModeOverlayProps {
   visible: boolean;
@@ -17,6 +19,7 @@ export interface DriveModeOverlayProps {
 
 export function DriveModeOverlay({ visible, statusText = 'Listening…', activeModel, onEnd, onModelSwitch, onRestart: _onRestart }: DriveModeOverlayProps) {
   const { settings, update } = useDriveModeSettings();
+  const { actions } = useChatContext();
   // Lazy load settings modal trigger to keep overlay light
   const DriveModeSettingsModal = React.useMemo(() => dynamic(() => import('@/components/chat/voice/DriveModeSettingsModal').then(m => m.DriveModeSettingsModal), { ssr: false }), []);
   // Keep fetching supported voices (used by settings modal), but don't render a header dropdown
@@ -63,6 +66,13 @@ export function DriveModeOverlay({ visible, statusText = 'Listening…', activeM
     update({ model: newModel });
     onModelSwitch?.(); // Notify parent to restart session with new model
   };
+
+  const triggerRoutine = React.useCallback((type: AssistantRoutineType) => {
+    actions.runRoutine(type);
+    try {
+      window.dispatchEvent(new CustomEvent('drive-mode-run-routine', { detail: { type } }));
+    } catch {}
+  }, [actions]);
 
   if (!visible) return null;
   return (
@@ -127,6 +137,24 @@ export function DriveModeOverlay({ visible, statusText = 'Listening…', activeM
                   End
                 </Button>
               </div>
+            </div>
+            <div className="flex flex-wrap gap-2 mb-4">
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-amber-400/40 bg-amber-900/20 text-amber-100"
+                onClick={() => triggerRoutine('morning_briefing')}
+              >
+                Morning Briefing
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-emerald-400/40 bg-emerald-900/20 text-emerald-100"
+                onClick={() => triggerRoutine('proactive_checkin')}
+              >
+                Check-in
+              </Button>
             </div>
 
             {/* Mic ring and status (centered vertically) */}

@@ -461,3 +461,41 @@ body {
   0%, 100% { background-position: 0% 50%; opacity: 0.8; }
   50% { background-position: 100% 50%; opacity: 1; }
 }
+
+/* ===== Empty Chat Welcome: compact behavior for short mobile landscapes ===== */
+@media (max-height: 540px) {
+  /* Apply compact styling only within the empty chat hero */
+  .empty-chat-root {
+    font-size: 0.95rem;
+  }
+
+  .empty-chat-root .empty-chat-header {
+    margin-bottom: 0.25rem;
+  }
+
+  .empty-chat-root .empty-chat-title {
+    font-size: 0.875rem; /* 14px */
+  }
+
+  .empty-chat-root .empty-chat-tagline {
+    display: none; /* Hide non-essential tagline to free vertical space */
+  }
+
+  .empty-chat-root .empty-chat-routines {
+    margin-top: 0.5rem;
+  }
+
+  .empty-chat-root .empty-chat-routines-grid {
+    row-gap: 0.4rem;
+  }
+
+  .empty-chat-root .empty-chat-routine-tile {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .empty-chat-root .empty-chat-footer {
+    display: none; /* Footer is nice-to-have; hide on very short screens */
+  }
+}
+

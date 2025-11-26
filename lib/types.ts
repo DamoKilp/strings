@@ -50,6 +50,31 @@ export interface TableSearchSettings {
 }
 // -------------------------------
 
+export interface HabitState {
+  id: string;
+  title: string;
+  description?: string | null;
+  cadence: 'daily' | 'weekly';
+  reminderTime?: string | null;
+  reminderDays?: number[] | null;
+  isActive: boolean;
+  streakCount: number;
+  lastCompletedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  history?: string[];
+}
+
+export interface AssistantRoutineStatus {
+  type: AssistantRoutineType;
+  status: 'active' | 'disabled' | 'idle';
+  lastRunAt?: string | null;
+  nextRunAt?: string | null;
+  config?: Record<string, unknown>;
+}
+
+export type AssistantRoutineType = 'morning_briefing' | 'habit_checkin' | 'weekly_review' | 'proactive_checkin';
+
 // Define MessageRole type
 export type MessageRole = 'user' | 'assistant' | 'system' | 'function' | 'tool' | 'data';
 
@@ -207,7 +232,8 @@ export interface ChatState {
   // Agent Manager feature
   customAgents: AgentDefinition[];
   agentPreferences: AgentPreference[];
-
+  habits: HabitState[];
+  routineStatuses: AssistantRoutineStatus[];
 }
 
 // --- MODIFIED: Add setSelectedPrePromptId action to ChatActions ---
@@ -242,6 +268,11 @@ export interface ChatActions {
   loadMoreConversations: () => Promise<void>;
   setChatFontSize: (size: ChatFontSize) => void;
   deleteMessage: (messageId: string) => Promise<void>;
+  runRoutine: (type: AssistantRoutineType, payload?: Record<string, unknown>) => Promise<void>;
+  refreshHabits: () => Promise<void>;
+  logHabitCompletion: (habitId: string, note?: string) => Promise<void>;
+  injectAutomationMessage: (message: ChatMessage) => void;
+  refreshRoutineStatuses: () => Promise<void>;
 }
 
 // Chat font size scale for message bubbles

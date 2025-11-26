@@ -369,6 +369,53 @@ export type Database = {
         }
         Relationships: []
       }
+      finance_billing_periods: {
+        Row: {
+          created_at: string
+          end_date: string
+          id: string
+          is_active: boolean
+          notes: string | null
+          period_name: string
+          snapshot_id: string | null
+          start_date: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          end_date: string
+          id?: string
+          is_active?: boolean
+          notes?: string | null
+          period_name: string
+          snapshot_id?: string | null
+          start_date: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          end_date?: string
+          id?: string
+          is_active?: boolean
+          notes?: string | null
+          period_name?: string
+          snapshot_id?: string | null
+          start_date?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "finance_billing_periods_snapshot_id_fkey"
+            columns: ["snapshot_id"]
+            isOneToOne: false
+            referencedRelation: "finance_monthly_snapshots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       finance_bills: {
         Row: {
           amount: number
@@ -379,9 +426,12 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          multiplier_type: string | null
           next_due_date: string
           notes: string | null
+          payment_day: number | null
           sort_order: number
+          typical_amount: number | null
           updated_at: string
           user_id: string
         }
@@ -394,9 +444,12 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          multiplier_type?: string | null
           next_due_date: string
           notes?: string | null
+          payment_day?: number | null
           sort_order?: number
+          typical_amount?: number | null
           updated_at?: string
           user_id: string
         }
@@ -409,9 +462,12 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          multiplier_type?: string | null
           next_due_date?: string
           notes?: string | null
+          payment_day?: number | null
           sort_order?: number
+          typical_amount?: number | null
           updated_at?: string
           user_id?: string
         }
@@ -470,6 +526,7 @@ export type Database = {
           cash_per_week: number | null
           created_at: string
           days_remaining: number
+          entry_time: string | null
           id: string
           notes: string | null
           projection_date: string
@@ -486,6 +543,7 @@ export type Database = {
           cash_per_week?: number | null
           created_at?: string
           days_remaining: number
+          entry_time?: string | null
           id?: string
           notes?: string | null
           projection_date: string
@@ -502,6 +560,7 @@ export type Database = {
           cash_per_week?: number | null
           created_at?: string
           days_remaining?: number
+          entry_time?: string | null
           id?: string
           notes?: string | null
           projection_date?: string
@@ -691,6 +750,42 @@ export type Database = {
           status?: string
           total_files?: number | null
           updated_rows?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      memories: {
+        Row: {
+          access_count: number
+          category: string | null
+          content: string
+          created_at: string
+          id: string
+          importance: number
+          last_accessed_at: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_count?: number
+          category?: string | null
+          content: string
+          created_at?: string
+          id?: string
+          importance?: number
+          last_accessed_at?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_count?: number
+          category?: string | null
+          content?: string
+          created_at?: string
+          id?: string
+          importance?: number
+          last_accessed_at?: string | null
+          updated_at?: string
           user_id?: string
         }
         Relationships: []

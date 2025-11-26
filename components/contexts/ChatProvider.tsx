@@ -31,7 +31,8 @@ import type {
   ModelParameters,
   ReasoningLevel,
   TableSearchSettings,
-  ChatFontSize
+  ChatFontSize,
+  AssistantRoutineType
 } from '@/lib/types';
 import {
   toCoreMessages,
@@ -157,6 +158,29 @@ export async function generateTitleFromMessage(text: string): Promise<string> {
   }
   // Fallback: default sync title logic
   return defaultGenerateTitleFromText(text);
+}
+const routineTitleMap: Record<AssistantRoutineType, string> = {
+  morning_briefing: '🌅 Morning Briefing',
+  weekly_review: '🗓 Weekly Review',
+  proactive_checkin: '🤝 Check-in',
+  habit_checkin: '✅ Habit Check-in',
+};
+
+function formatRoutineMessage(type: AssistantRoutineType, payload: unknown): string {
+  const title = routineTitleMap[type] ?? 'Assistant Routine';
+  const summary =
+    typeof (payload as { summary?: string })?.summary === 'string'
+      ? (payload as { summary: string }).summary
+      : 'Here is the latest update.';
+  const sections = Array.isArray((payload as { sections?: Array<{ title: string; items: string[] }> })?.sections)
+    ? ((payload as { sections: Array<{ title: string; items: string[] }> }).sections)
+        .map((section) => {
+          const items = section.items?.length ? section.items.join('; ') : '';
+          return `• ${section.title}${items ? ` — ${items}` : ''}`;
+        })
+        .join('\n')
+    : '';
+  return [title, summary, sections].filter(Boolean).join('\n');
 }
 // ------------------------------------------------------------------
 
@@ -357,6 +381,8 @@ const initialState: ChatState = {
   customAgents: [],
   agentPreferences: [],
   chatFontSize: 'md',
+  habits: [],
+  routineStatuses: [],
 };
 
 const ChatContext = createContext<ChatContextProps | null>(null);
@@ -472,6 +498,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   
   // NEW: Ref to track latest table search state (avoids stale closure)
   const tableSearchEnabledRef = useRef<boolean>(state.tableSearchEnabled);
+  const proactiveCheckinLockRef = useRef<boolean>(false);
 
   // --- ADDED: Post-assistant-message conversation title auto-update logic ---
   const updateTitleAfterAssistant = useCallback(
@@ -1664,6 +1691,101 @@ export function ChatProvider({ children }: ChatProviderProps) {
     });
   }, []);
 
+  const refreshHabits = useCallback(async () => {
+    try {
+      const res = await fetch('/api/habits', { cache: 'no-store' });
+      if (!res.ok) throw new Error('Failed to load habits');
+      const data = await res.json();
+      setState(prev => ({ ...prev, habits: data?.habits ?? [] }));
+    } catch (error) {
+      console.error('[ChatProvider] refreshHabits error', error);
+    }
+  }, []);
+
+  const refreshRoutineStatuses = useCallback(async () => {
+    try {
+      const res = await fetch('/api/assistant/routines', { cache: 'no-store' });
+      if (!res.ok) throw new Error('Failed to load routines');
+      const data = await res.json();
+      setState(prev => ({ ...prev, routineStatuses: data?.routines ?? [] }));
+    } catch (error) {
+      console.error('[ChatProvider] refreshRoutineStatuses error', error);
+    }
+  }, []);
+
+  const injectAutomationMessage = useCallback((message: ChatMessage) => {
+    setState(prev => {
+      if (prev.activeConversationId !== message.conversationId) {
+        return prev;
+      }
+      return { ...prev, currentMessages: [...prev.currentMessages, message] };
+    });
+  }, []);
+
+  const logHabitCompletion = useCallback(
+    async (habitId: string, note?: string) => {
+      try {
+        await fetch(`/api/habits/${habitId}/logs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ note }),
+        });
+        await refreshHabits();
+      } catch (error) {
+        console.error('[ChatProvider] logHabitCompletion error', error);
+      }
+    },
+    [refreshHabits]
+  );
+
+  const runRoutine = useCallback(
+    async (routineType: AssistantRoutineType, payload?: Record<string, unknown>) => {
+      const endpoints: Record<AssistantRoutineType, string> = {
+        morning_briefing: '/api/assistant/routines/morning-briefing',
+        weekly_review: '/api/assistant/routines/weekly-review',
+        proactive_checkin: '/api/assistant/routines/checkins',
+        habit_checkin: '/api/assistant/routines/checkins',
+      };
+      const endpoint = endpoints[routineType];
+      if (!endpoint) return;
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload ? JSON.stringify(payload) : undefined,
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body?.error || 'Routine run failed');
+        }
+        const data = await response.json();
+        await refreshRoutineStatuses();
+        let conversationId = state.activeConversationId;
+        let isLocalConversation = state.activeConversationIsLocal;
+        if (!conversationId) {
+          const newConversation = await createNewConversation('local', true);
+          conversationId = newConversation?.id ?? null;
+          isLocalConversation = newConversation?.isLocal ?? true;
+        }
+        if (!conversationId) return;
+        await selectConversation(conversationId, isLocalConversation ?? true);
+        const message: ChatMessage = {
+          id: storageService.generateLocalId(),
+          role: 'assistant',
+          content: formatRoutineMessage(routineType, data),
+          createdAt: new Date(),
+          conversationId,
+          userId: state.user?.id ?? '',
+          metadata: { routineType, routinePayload: data },
+        };
+        injectAutomationMessage(message);
+      } catch (error) {
+        console.error('[ChatProvider] runRoutine error', error);
+      }
+    },
+    [state.activeConversationId, state.activeConversationIsLocal, state.user?.id, createNewConversation, injectAutomationMessage, refreshRoutineStatuses, selectConversation]
+  );
+
   // --- Pre-Prompt Action Implementation ---
   const setSelectedPrePromptId = useCallback((promptId: string) => {
     // Unconditionally accept selection; custom agents may not be loaded yet.
@@ -1791,6 +1913,38 @@ export function ChatProvider({ children }: ChatProviderProps) {
   }, [state.isLoadingMoreConversations, state.hasMoreConversations, state.conversationCursor, state.user]);
 
   // --- Consolidate actions ---
+  useEffect(() => {
+    refreshHabits();
+    refreshRoutineStatuses();
+  }, [refreshHabits, refreshRoutineStatuses]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ type: AssistantRoutineType }>).detail;
+      if (detail?.type) runRoutine(detail.type);
+    };
+    window.addEventListener('run-routine', handler as EventListener);
+    return () => window.removeEventListener('run-routine', handler as EventListener);
+  }, [runRoutine]);
+
+  useEffect(() => {
+    if (!state.user) return;
+    const interval = setInterval(() => {
+      const routine = state.routineStatuses.find(r => r.type === 'proactive_checkin');
+      if (!routine || routine.status === 'disabled') return;
+      if (!routine.nextRunAt) return;
+      const dueTime = new Date(routine.nextRunAt).getTime();
+      if (Number.isNaN(dueTime) || dueTime > Date.now()) return;
+      if (proactiveCheckinLockRef.current) return;
+      proactiveCheckinLockRef.current = true;
+      runRoutine('proactive_checkin').finally(() => {
+        proactiveCheckinLockRef.current = false;
+      });
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [state.user, state.routineStatuses, runRoutine]);
+
   const actions: ChatActions = useMemo(() => ({
     selectConversation,
     createNewConversation,
@@ -1816,6 +1970,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
     toggleMemories, // NEW: Add memories toggle
     setTableSearchSettings, // NEW: Add table search settings action
     loadMoreConversations, // Add the new action
+    runRoutine,
+    refreshHabits,
+    logHabitCompletion,
+    injectAutomationMessage,
+    refreshRoutineStatuses,
     setChatFontSize: (size: ChatFontSize) => {
       setState(prev => {
         const next = { ...prev, chatFontSize: size };
@@ -1871,6 +2030,11 @@ export function ChatProvider({ children }: ChatProviderProps) {
     state.user,
     state.activeConversationId,
     state.activeConversationIsLocal,
+    runRoutine,
+    refreshHabits,
+    logHabitCompletion,
+    injectAutomationMessage,
+    refreshRoutineStatuses,
   ]);
 
   // --- Update actionsRef ---

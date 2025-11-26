@@ -189,10 +189,7 @@ export async function POST(req: NextRequest) {
           // Use grep/findstr to search (cross-platform approach using git grep)
           const pattern = filePattern || '*.ts,*.tsx,*.js,*.jsx,*.json,*.md';
           const extensions = pattern.split(',').map(p => p.trim());
-          
-          // Build include patterns for git grep
-          const includeArgs = extensions.map(ext => `--include="${ext}"`).join(' ');
-          
+
           const { stdout } = await execAsync(
             `git --no-pager grep -n -i "${query.replace(/"/g, '\\"')}" -- ${extensions.map(e => `"${e}"`).join(' ')}`,
             { cwd: resolvedPath, maxBuffer: 1024 * 1024 }
