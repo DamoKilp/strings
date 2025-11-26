@@ -5,6 +5,8 @@ import { requestScreenWakeLock, releaseWakeLock } from './voiceUtils';
 import { useDriveModeSettings } from './useDriveModeSettings';
 import { getPrePromptById, getDefaultPrePrompt } from '@/components/data/prePrompts';
 import { MemoryService } from '@/lib/memoryService';
+import { storageService } from '@/lib/storageService';
+import type { ChatMessage, ConversationSummary } from '@/lib/types';
 
 // Module-scoped lock to avoid duplicate realtime sessions (e.g., StrictMode effects)
 let __driveModeRealtimeLock = false;
@@ -149,6 +151,7 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const wakeLockRef = useRef<unknown | null>(null);
+  const audioFocusElementRef = useRef<HTMLAudioElement | null>(null); // Dummy element for audio focus
   const [_error, setError] = useState<string | null>(null);
   const startedRef = useRef<boolean>(false);
   const sessionIdRef = useRef<number>(0);
@@ -167,6 +170,14 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
   const pendingToolResultsRef = useRef<Map<string, { callId: string; result: string; responseId?: string }>>(new Map());
   const callIdToItemIdRef = useRef<Map<string, string>>(new Map()); // Track item_id for tool results to enable updates
   const placeholderSentRef = useRef<Set<string>>(new Set<string>()); // Track which call_ids have placeholders sent
+  
+  // Conversation tracking for saving voice chats to DB
+  const voiceConversationIdRef = useRef<string | null>(null);
+  const pendingUserTranscriptRef = useRef<string>(''); // Accumulate user speech
+  const pendingAssistantTranscriptRef = useRef<string>(''); // Accumulate assistant speech
+  const lastSavedUserMsgIdRef = useRef<string | null>(null);
+  const lastSavedAssistantMsgIdRef = useRef<string | null>(null);
+  
   useEffect(() => { onStatusRef.current = onStatus; }, [onStatus]);
   useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
 
@@ -185,15 +196,128 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
       };
       try {
         onStatusRef.current?.('Requesting mic…');
+        
+        // ======================================================================
+        // AUDIO FOCUS: Claim exclusive audio focus BEFORE getting microphone
+        // This pauses other audio apps (Audible, Spotify, etc.) on mobile
+        // ======================================================================
+        if (settings?.exclusiveAudioFocus !== false) {
+          try {
+            // 1. Set up Audio Session API if available (newer browsers)
+            // This tells the platform we want exclusive audio for voice chat
+            type AudioSessionAPI = {
+              type: 'playback' | 'transient' | 'transient-solo' | 'ambient' | 'play-and-record' | 'auto';
+            };
+            const audioSession = (navigator as unknown as { audioSession?: AudioSessionAPI }).audioSession;
+            if (audioSession) {
+              // 'play-and-record' is designed for voice chat - it pauses other audio
+              audioSession.type = 'play-and-record';
+              log('Audio Session API: set type to play-and-record');
+            }
+            
+            // 2. Media Session API - claim media focus and show in system UI
+            if ('mediaSession' in navigator) {
+              navigator.mediaSession.metadata = new MediaMetadata({
+                title: 'Drive Mode Voice Chat',
+                artist: 'Strings Assistant',
+                album: 'Voice Conversation',
+                artwork: [
+                  { src: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png' },
+                  { src: '/icons/icon-512x512.png', sizes: '512x512', type: 'image/png' },
+                ]
+              });
+              navigator.mediaSession.playbackState = 'playing';
+              
+              // Set up action handlers
+              try {
+                navigator.mediaSession.setActionHandler('pause', () => {
+                  onStatusRef.current?.('Paused via system controls');
+                  try { remoteAudioRef.current?.pause(); } catch {}
+                });
+                navigator.mediaSession.setActionHandler('play', () => {
+                  onStatusRef.current?.('Resumed via system controls');
+                  try { remoteAudioRef.current?.play(); } catch {}
+                });
+                navigator.mediaSession.setActionHandler('stop', () => {
+                  onEndedRef.current?.();
+                });
+              } catch {}
+              log('Media Session API: metadata and handlers set');
+            }
+            
+            // 3. CRITICAL WORKAROUND: Play a silent audio element to claim Android audio focus
+            // The Web Audio API doesn't request Android Audio Focus, but <audio> elements do
+            // This forces other apps (Audible, etc.) to pause
+            const focusElement = document.createElement('audio');
+            focusElement.id = 'drive-mode-audio-focus-claim';
+            // Use a data URI of a very short silent audio (1 sample of silence)
+            // This is a valid WAV file with 1 sample of silence at 8kHz
+            focusElement.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+            focusElement.loop = true;
+            focusElement.volume = 0.01; // Near-silent but not muted (muted won't claim focus)
+            // @ts-expect-error - playsInline exists
+            focusElement.playsInline = true;
+            focusElement.setAttribute('data-audio-focus-claim', 'true');
+            
+            // Try to set the output device
+            try {
+              type SinkAudioElement = HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> };
+              const sinkEl = focusElement as SinkAudioElement;
+              if (typeof sinkEl.setSinkId === 'function' && settings?.audioOutputDeviceId && settings.audioOutputDeviceId !== 'default') {
+                await sinkEl.setSinkId(settings.audioOutputDeviceId);
+              }
+            } catch {}
+            
+            document.body.appendChild(focusElement);
+            audioFocusElementRef.current = focusElement;
+            
+            // Play the silent audio to claim focus - this will pause other apps
+            await focusElement.play().catch((e) => {
+              log('Audio focus element play failed (may need user gesture):', e);
+            });
+            
+            // Small delay to let audio focus propagate
+            await new Promise(r => setTimeout(r, 100));
+            log('Audio focus claimed via silent audio element');
+          } catch (focusErr) {
+            log('Audio focus setup error (non-fatal):', focusErr);
+          }
+        }
+        
+        // ======================================================================
+        // MICROPHONE: Enhanced constraints for car/Bluetooth audio
+        // ======================================================================
+        const voiceOptimized = settings?.voiceOptimizedAudio !== false;
+        const sampleRate = settings?.sampleRate || 24000;
+        
         const audioConstraints: MediaTrackConstraints = {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
+          // Echo cancellation is CRITICAL for car speakers feeding back into car mic
+          echoCancellation: { ideal: true },
+          // Noise suppression helps with road/engine noise
+          noiseSuppression: { ideal: true },
+          // Auto gain control helps with varying distances from car mic
+          autoGainControl: { ideal: true },
         };
+        
+        if (voiceOptimized) {
+          // Voice-optimized settings for better quality in cars
+          Object.assign(audioConstraints, {
+            // Mono is better for voice and more compatible with Bluetooth HFP profile
+            channelCount: { ideal: 1 },
+            // Sample rate: 24kHz is good for voice, but some Bluetooth only supports 16kHz
+            sampleRate: { ideal: sampleRate, min: 8000 },
+            // Latency: lower is better for real-time conversation
+            latency: { ideal: 0.01 },
+          });
+        }
+        
         // Apply preferred input device if specified
         if (settings?.audioInputDeviceId && settings.audioInputDeviceId !== 'default') {
-          audioConstraints.deviceId = settings.audioInputDeviceId as unknown as ConstrainDOMString;
+          audioConstraints.deviceId = { exact: settings.audioInputDeviceId };
         }
+        
+        log('Requesting microphone with constraints:', JSON.stringify(audioConstraints));
+        
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: audioConstraints,
         });
@@ -371,7 +495,7 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
             parts.push(languageInstruction);
             
             // Add memory tool instructions
-            const memoryToolInstructions = `\n\n**Memory Management:**\nYou have access to a create_memory tool. Use it to store important information about the user when they share:\n- Personal information (preferences, family details, important dates)\n- Goals and aspirations (fitness goals, work projects)\n- Important facts about their life, work, or relationships\nStore memories with appropriate importance levels (5-7 for general facts, 8-9 for important preferences, 10 for critical information like how to address the user).`;
+            const memoryToolInstructions = `\n\n**Memory System (IMPORTANT - YOU HAVE ACCESS TO MEMORIES):**\nYou have FULL ACCESS to the user's memories. The memories listed above under "RELEVANT MEMORIES" are YOUR knowledge about this user - USE THEM.\n\n**When user asks about memories:**\n- If they say "what do you know about me", "check my memories", "look at my memories", "what have I told you", etc. - refer to the RELEVANT MEMORIES section above AND use the search_memories tool for more specific queries.\n- NEVER say "I don't have access to your memories" - you DO have access!\n- Use the search_memories tool to find specific memories by category or keyword.\n\n**Memory Tools:**\n1. search_memories - Search/browse the memories database by category or keyword. Use this when the user asks about specific topics or wants to see what you remember.\n2. create_memory - Store NEW information about the user.\n\nStore memories with importance levels: 5-7 for general facts, 8-9 for important preferences, 10 for critical info.`;
             
             // Add voice command instructions
             const voiceCommandInstructions = `\n\n**Voice Commands & Protocols (IMPORTANT):**\nWhen the user mentions ANY of these phrases, you MUST use the get_protocol tool FIRST before doing anything else:\n- "run protocol", "run the [name] protocol", "execute protocol"\n- "follow protocol", "apply protocol", "use protocol"\n- "run voice protocol", "start protocol"\n\n**CRITICAL PROTOCOL WORKFLOW:**\n1. When user says "run the News protocol" or similar, call get_protocol with protocolName="News"\n2. The get_protocol tool will return the actual instructions stored in that protocol\n3. You MUST then follow those returned instructions exactly (which may include web searches, specific actions, etc.)\n4. Do NOT guess what a protocol does - ALWAYS retrieve it first\n\nProtocols are stored instructions that tell you exactly what to do. They may contain multi-step workflows like "search for X, then search for Y, then summarize". You must retrieve the protocol content first to know what actions to take.`;
@@ -379,16 +503,45 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
             // Add web search instructions
             const webSearchInstructions = `\n\n**Web Search:**\nYou have access to a web_search tool that allows you to search the internet for current information. Use this tool when:\n- The user asks about current events, recent news, or up-to-date information\n- The user explicitly asks you to "search online", "look it up", "check the web", or similar phrases\n- You need real-time information that may not be in your training data\n- The user asks about "today", "this week", "latest", "current" information\n\n**IMPORTANT for news searches:** When searching for NEWS or HEADLINES, you MUST set searchType to "news". This ensures you get actual news articles instead of generic information. Example: for "Western Australian news today", use query="Western Australian news today" and searchType="news".\n\nWhen using web search, summarize the results concisely for voice consumption. Keep responses natural and conversational.`;
             
+            // Add conversation search instructions
+            const conversationSearchInstructions = `\n\n**Previous Conversations:**\nYou have access to a search_conversations tool that searches through ALL previous conversations (both text and voice chats) with the user. Use this when:\n- The user asks "what did we talk about", "remember when we discussed", "look at our previous conversations"\n- The user wants to find a specific past conversation or topic\n- The user references something from a previous chat\n\nThis searches the full conversation history stored in the database, so you can find any past discussion.`;
+            
             const instructions = parts.length > 0
-              ? `${parts.join('\n\n')}${memoryToolInstructions}${voiceCommandInstructions}${webSearchInstructions}`
-              : `${languageInstruction}\n\nYou are a helpful AI assistant in a real-time voice conversation. Speak naturally, keep responses concise, and vary your phrasing to avoid repetition.${memoryToolInstructions}${voiceCommandInstructions}${webSearchInstructions}`;
+              ? `${parts.join('\n\n')}${memoryToolInstructions}${voiceCommandInstructions}${webSearchInstructions}${conversationSearchInstructions}`
+              : `${languageInstruction}\n\nYou are a helpful AI assistant in a real-time voice conversation. Speak naturally, keep responses concise, and vary your phrasing to avoid repetition.${memoryToolInstructions}${voiceCommandInstructions}${webSearchInstructions}${conversationSearchInstructions}`;
             
             // Add memory creation, protocol retrieval, and web search tools to session
             const tools = [
               {
                 type: 'function',
+                name: 'search_memories',
+                description: 'Search and browse the user\'s memories database. Use this when the user asks "what do you know about me", "check my memories", "look at my memories", "what have I told you about X", or wants to see specific memories. You MUST use this tool instead of saying you don\'t have access to memories.',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    query: {
+                      type: 'string',
+                      description: 'Optional search keyword to filter memories (e.g., "family", "work", "fitness"). Leave empty to get all memories.'
+                    },
+                    category: {
+                      type: 'string',
+                      enum: ['personal', 'work', 'family', 'fitness', 'preferences', 'projects', 'protocol', 'protocols', 'other'],
+                      description: 'Optional category to filter memories by.'
+                    },
+                    limit: {
+                      type: 'number',
+                      minimum: 1,
+                      maximum: 50,
+                      description: 'Maximum number of memories to return. Default is 20.'
+                    }
+                  },
+                  required: []
+                }
+              },
+              {
+                type: 'function',
                 name: 'create_memory',
-                description: 'Store a memory about the user for future conversations. Use this when the user shares personal information, preferences, important facts, or things you should remember about them.',
+                description: 'Store a NEW memory about the user for future conversations. Use this when the user shares personal information, preferences, important facts, or things you should remember about them.',
                 parameters: {
                   type: 'object',
                   properties: {
@@ -451,6 +604,27 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
                   },
                   required: ['query']
                 }
+              },
+              {
+                type: 'function',
+                name: 'search_conversations',
+                description: 'Search through previous conversations (text and voice chats) with the user. Use this when the user asks "what did we talk about", "remember when we discussed X", "look at our previous conversations", or wants to find something from a past chat.',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    query: {
+                      type: 'string',
+                      description: 'Search keyword or topic to find in past conversations (e.g., "fitness", "work project", "family"). Leave empty to get recent conversations.'
+                    },
+                    limit: {
+                      type: 'number',
+                      minimum: 1,
+                      maximum: 20,
+                      description: 'Maximum number of conversations to search. Default is 10.'
+                    }
+                  },
+                  required: []
+                }
               }
             ];
 
@@ -478,6 +652,27 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
             if (!sessionReadyRef.current) {
               sessionReadyRef.current = true;
               console.log('[DriveMode] Session ready (timeout fallback)');
+            }
+            
+            // Create a conversation in the database to save this voice chat
+            try {
+              const userId = userIdRef.current;
+              if (userId) {
+                const now = new Date();
+                const convo = await storageService.createConversation(
+                  userId,
+                  false, // Save to cloud, not local
+                  `Voice Chat ${now.toLocaleString()}`,
+                  undefined,
+                  effectiveModel
+                );
+                if (convo) {
+                  voiceConversationIdRef.current = convo.id;
+                  log('Created voice conversation:', convo.id);
+                }
+              }
+            } catch (convErr) {
+              log('Failed to create voice conversation (non-fatal):', convErr);
             }
             
             // Optional: auto-greet to assert audio focus and confirm route
@@ -514,6 +709,74 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
           if (obj.type === 'session.updated' || obj.type === 'session.update_completed') {
             sessionReadyRef.current = true;
             console.log('[DriveMode] Session ready confirmed via event');
+          }
+          
+          // ======================================================================
+          // TRANSCRIPT CAPTURE: Save user and assistant speech to conversation
+          // ======================================================================
+          
+          // Capture user speech transcription
+          if (obj.type === 'conversation.item.input_audio_transcription.completed') {
+            const transcript = (obj as { transcript?: string }).transcript;
+            if (transcript && transcript.trim()) {
+              const userId = userIdRef.current;
+              const conversationId = voiceConversationIdRef.current;
+              if (userId && conversationId) {
+                try {
+                  const userMessage: ChatMessage = {
+                    id: storageService.generateLocalId(),
+                    role: 'user',
+                    content: transcript.trim(),
+                    createdAt: new Date(),
+                    conversationId: conversationId,
+                    userId: userId,
+                    metadata: { source: 'voice' }
+                  };
+                  storageService.addMessage(conversationId, userMessage, userId, false);
+                  lastSavedUserMsgIdRef.current = userMessage.id;
+                  console.log('[DriveMode] 💬 Saved user transcript:', transcript.substring(0, 50) + '...');
+                } catch (saveErr) {
+                  console.error('[DriveMode] Failed to save user message:', saveErr);
+                }
+              }
+            }
+          }
+          
+          // Capture assistant speech transcription (accumulate deltas)
+          if (obj.type === 'response.audio_transcript.delta') {
+            const delta = (obj as { delta?: string }).delta;
+            if (delta) {
+              pendingAssistantTranscriptRef.current += delta;
+            }
+          }
+          
+          // Save assistant transcript when response audio is done
+          if (obj.type === 'response.audio_transcript.done' || obj.type === 'response.done') {
+            const transcript = (obj as { transcript?: string }).transcript || pendingAssistantTranscriptRef.current;
+            if (transcript && transcript.trim()) {
+              const userId = userIdRef.current;
+              const conversationId = voiceConversationIdRef.current;
+              if (userId && conversationId) {
+                try {
+                  const assistantMessage: ChatMessage = {
+                    id: storageService.generateLocalId(),
+                    role: 'assistant',
+                    content: transcript.trim(),
+                    createdAt: new Date(),
+                    conversationId: conversationId,
+                    userId: userId,
+                    metadata: { source: 'voice', model: effectiveModel }
+                  };
+                  storageService.addMessage(conversationId, assistantMessage, userId, false);
+                  lastSavedAssistantMsgIdRef.current = assistantMessage.id;
+                  console.log('[DriveMode] 🤖 Saved assistant transcript:', transcript.substring(0, 50) + '...');
+                } catch (saveErr) {
+                  console.error('[DriveMode] Failed to save assistant message:', saveErr);
+                }
+              }
+              // Clear the pending transcript
+              pendingAssistantTranscriptRef.current = '';
+            }
           }
           
           // Check for function_call_output creation confirmation
@@ -1070,12 +1333,228 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
             }
           };
           
+          // Handle search_memories tool
+          const handleMemorySearch = async (callId: string, input: Record<string, unknown>) => {
+            // Prevent duplicate processing
+            if (processedCallIdsRef.current.has(callId)) {
+              console.log('[DriveMode] search_memories: already processed call_id', callId);
+              return;
+            }
+            processedCallIdsRef.current.add(callId);
+            
+            try {
+              const searchInput = input as { query?: string; category?: string; limit?: number };
+              console.log('[DriveMode] search_memories input:', JSON.stringify(searchInput));
+              
+              // Fetch memories with optional filters
+              const options: { limit?: number; category?: string } = {
+                limit: searchInput.limit || 20
+              };
+              if (searchInput.category) {
+                options.category = searchInput.category;
+              }
+              
+              let memories = await MemoryService.getMemories(options);
+              
+              // If query provided, filter by keyword
+              if (searchInput.query && searchInput.query.trim()) {
+                const queryLower = searchInput.query.toLowerCase();
+                memories = memories.filter(m => 
+                  m.content.toLowerCase().includes(queryLower) ||
+                  (m.category && m.category.toLowerCase().includes(queryLower))
+                );
+              }
+              
+              let output: string;
+              if (memories.length === 0) {
+                output = searchInput.query || searchInput.category
+                  ? `No memories found matching your search. Try a different keyword or category.`
+                  : `No memories stored yet. You can ask me to remember things about you.`;
+              } else {
+                // Format memories for voice output
+                const formattedMemories = memories.map((m, idx) => {
+                  const cat = m.category ? ` [${m.category}]` : '';
+                  return `${idx + 1}. ${m.content}${cat}`;
+                }).join('\n');
+                output = `Found ${memories.length} memories:\n\n${formattedMemories}`;
+              }
+              
+              console.log('[DriveMode] search_memories: found', memories.length, 'memories');
+              
+              if (dc.readyState === 'open') {
+                dc.send(JSON.stringify({
+                  type: 'conversation.item.create',
+                  item: {
+                    type: 'function_call_output',
+                    call_id: callId,
+                    output
+                  }
+                }));
+                dc.send(JSON.stringify({ type: 'response.create' }));
+              }
+            } catch (err) {
+              console.error('[DriveMode] search_memories: error', err);
+              try {
+                if (dc.readyState === 'open') {
+                  dc.send(JSON.stringify({
+                    type: 'conversation.item.create',
+                    item: {
+                      type: 'function_call_output',
+                      call_id: callId,
+                      output: 'Error searching memories. Please try again.'
+                    }
+                  }));
+                  dc.send(JSON.stringify({ type: 'response.create' }));
+                }
+              } catch {}
+            }
+          };
+          
+          // Handle search_conversations tool
+          const handleConversationSearch = async (callId: string, input: Record<string, unknown>) => {
+            // Prevent duplicate processing
+            if (processedCallIdsRef.current.has(callId)) {
+              console.log('[DriveMode] search_conversations: already processed call_id', callId);
+              return;
+            }
+            processedCallIdsRef.current.add(callId);
+            
+            try {
+              const searchInput = input as { query?: string; limit?: number };
+              const userId = userIdRef.current;
+              
+              if (!userId) {
+                if (dc.readyState === 'open') {
+                  dc.send(JSON.stringify({
+                    type: 'conversation.item.create',
+                    item: {
+                      type: 'function_call_output',
+                      call_id: callId,
+                      output: 'Error: User not authenticated.'
+                    }
+                  }));
+                  dc.send(JSON.stringify({ type: 'response.create' }));
+                }
+                return;
+              }
+              
+              console.log('[DriveMode] search_conversations input:', JSON.stringify(searchInput));
+              
+              // Get conversation list
+              const limit = searchInput.limit || 10;
+              const { items: conversations } = await storageService.getConversationList(userId, null, limit * 2);
+              
+              if (conversations.length === 0) {
+                if (dc.readyState === 'open') {
+                  dc.send(JSON.stringify({
+                    type: 'conversation.item.create',
+                    item: {
+                      type: 'function_call_output',
+                      call_id: callId,
+                      output: 'No previous conversations found.'
+                    }
+                  }));
+                  dc.send(JSON.stringify({ type: 'response.create' }));
+                }
+                return;
+              }
+              
+              // If query provided, search through conversation messages
+              let results: Array<{ title: string; date: string; preview: string }> = [];
+              
+              if (searchInput.query && searchInput.query.trim()) {
+                const queryLower = searchInput.query.toLowerCase();
+                
+                // Search through conversations (load full messages to search)
+                for (const convoSummary of conversations.slice(0, 20)) {
+                  try {
+                    const fullConvo = await storageService.getConversation(convoSummary.id, userId);
+                    if (fullConvo && fullConvo.messages) {
+                      // Search messages for the query
+                      const matchingMessages = fullConvo.messages.filter(m => 
+                        typeof m.content === 'string' && m.content.toLowerCase().includes(queryLower)
+                      );
+                      
+                      if (matchingMessages.length > 0) {
+                        // Get a preview from the first matching message
+                        const firstMatch = matchingMessages[0];
+                        const content = typeof firstMatch.content === 'string' ? firstMatch.content : '';
+                        const preview = content.length > 100 ? content.substring(0, 100) + '...' : content;
+                        
+                        results.push({
+                          title: fullConvo.title || 'Untitled',
+                          date: fullConvo.createdAt.toLocaleDateString(),
+                          preview: preview
+                        });
+                      }
+                    }
+                  } catch {
+                    // Skip conversations that fail to load
+                  }
+                  
+                  if (results.length >= limit) break;
+                }
+              } else {
+                // No query - just return recent conversations
+                results = conversations.slice(0, limit).map(c => ({
+                  title: c.title || 'Untitled',
+                  date: c.createdAt.toLocaleDateString(),
+                  preview: c.firstMessagePreview || '(No preview)'
+                }));
+              }
+              
+              let output: string;
+              if (results.length === 0) {
+                output = searchInput.query 
+                  ? `No conversations found mentioning "${searchInput.query}". Try a different search term.`
+                  : 'No conversations found.';
+              } else {
+                const formatted = results.map((r, idx) => 
+                  `${idx + 1}. "${r.title}" (${r.date}): ${r.preview}`
+                ).join('\n\n');
+                output = `Found ${results.length} conversation${results.length === 1 ? '' : 's'}:\n\n${formatted}`;
+              }
+              
+              console.log('[DriveMode] search_conversations: found', results.length, 'results');
+              
+              if (dc.readyState === 'open') {
+                dc.send(JSON.stringify({
+                  type: 'conversation.item.create',
+                  item: {
+                    type: 'function_call_output',
+                    call_id: callId,
+                    output
+                  }
+                }));
+                dc.send(JSON.stringify({ type: 'response.create' }));
+              }
+            } catch (err) {
+              console.error('[DriveMode] search_conversations: error', err);
+              try {
+                if (dc.readyState === 'open') {
+                  dc.send(JSON.stringify({
+                    type: 'conversation.item.create',
+                    item: {
+                      type: 'function_call_output',
+                      call_id: callId,
+                      output: 'Error searching conversations. Please try again.'
+                    }
+                  }));
+                  dc.send(JSON.stringify({ type: 'response.create' }));
+                }
+              } catch {}
+            }
+          };
+          
           // Handle specific Realtime API event types that contain function calls
           // (eventType already declared above)
           
           // Helper to handle tool calls based on name
           const handleToolCall = (toolCall: { callId: string; name: string; arguments: Record<string, unknown> }) => {
-            if (toolCall.name === 'create_memory') {
+            if (toolCall.name === 'search_memories') {
+              console.log('[DriveMode] search_memories tool call detected', { callId: toolCall.callId, arguments: toolCall.arguments });
+              handleMemorySearch(toolCall.callId, toolCall.arguments);
+            } else if (toolCall.name === 'create_memory') {
               console.log('[DriveMode] create_memory tool call detected', { callId: toolCall.callId, arguments: toolCall.arguments });
               handleMemoryCreation(toolCall.callId, toolCall.arguments);
             } else if (toolCall.name === 'get_protocol') {
@@ -1084,6 +1563,9 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
             } else if (toolCall.name === 'web_search') {
               console.log('[DriveMode] web_search tool call detected', { callId: toolCall.callId, arguments: toolCall.arguments });
               handleWebSearch(toolCall.callId, toolCall.arguments);
+            } else if (toolCall.name === 'search_conversations') {
+              console.log('[DriveMode] search_conversations tool call detected', { callId: toolCall.callId, arguments: toolCall.arguments });
+              handleConversationSearch(toolCall.callId, toolCall.arguments);
             }
           };
           
@@ -1091,7 +1573,7 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
           if (eventType === 'response.function_call_arguments.done') {
             const responseId = (obj as { response_id?: string }).response_id as string | undefined;
             const toolCall = extractToolCall(obj);
-            if (toolCall && (toolCall.name === 'create_memory' || toolCall.name === 'get_protocol' || toolCall.name === 'web_search') && !processedCallIdsRef.current.has(toolCall.callId)) {
+            if (toolCall && (toolCall.name === 'search_memories' || toolCall.name === 'create_memory' || toolCall.name === 'get_protocol' || toolCall.name === 'web_search' || toolCall.name === 'search_conversations') && !processedCallIdsRef.current.has(toolCall.callId)) {
               // Track which response_id this call_id belongs to
               if (responseId) {
                 callIdToResponseIdRef.current.set(toolCall.callId, responseId);
@@ -1106,7 +1588,7 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
             const item = (obj as { item?: unknown }).item;
             if (item && typeof item === 'object') {
               const toolCall = extractToolCall(item as Record<string, unknown>);
-              if (toolCall && (toolCall.name === 'create_memory' || toolCall.name === 'get_protocol' || toolCall.name === 'web_search') && !processedCallIdsRef.current.has(toolCall.callId)) {
+              if (toolCall && (toolCall.name === 'search_memories' || toolCall.name === 'create_memory' || toolCall.name === 'get_protocol' || toolCall.name === 'web_search' || toolCall.name === 'search_conversations') && !processedCallIdsRef.current.has(toolCall.callId)) {
                 handleToolCall(toolCall);
               }
             }
@@ -1119,7 +1601,7 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
               for (const outputItem of response.output) {
                 if (outputItem && typeof outputItem === 'object') {
                   const toolCall = extractToolCall(outputItem as Record<string, unknown>);
-                  if (toolCall && (toolCall.name === 'create_memory' || toolCall.name === 'get_protocol' || toolCall.name === 'web_search') && !processedCallIdsRef.current.has(toolCall.callId)) {
+                  if (toolCall && (toolCall.name === 'search_memories' || toolCall.name === 'create_memory' || toolCall.name === 'get_protocol' || toolCall.name === 'web_search' || toolCall.name === 'search_conversations') && !processedCallIdsRef.current.has(toolCall.callId)) {
                     handleToolCall(toolCall);
                   }
                 }
@@ -1131,7 +1613,7 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
           const checkForToolCalls = (data: Record<string, unknown>, path = 'root'): void => {
             // Check if this object itself is a tool call
             const toolCall = extractToolCall(data);
-            if (toolCall && (toolCall.name === 'create_memory' || toolCall.name === 'get_protocol' || toolCall.name === 'web_search')) {
+            if (toolCall && (toolCall.name === 'search_memories' || toolCall.name === 'create_memory' || toolCall.name === 'get_protocol' || toolCall.name === 'web_search' || toolCall.name === 'search_conversations')) {
               console.log('[DriveMode]', toolCall.name, 'tool call detected at path:', path, { callId: toolCall.callId });
               handleToolCall(toolCall);
               return;
@@ -1150,7 +1632,7 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
                 data.arguments
               );
               
-              if ((legacyName === 'create_memory' || legacyName === 'get_protocol' || legacyName === 'web_search') && legacyCallId && legacyArgs) {
+              if ((legacyName === 'search_memories' || legacyName === 'create_memory' || legacyName === 'get_protocol' || legacyName === 'web_search' || legacyName === 'search_conversations') && legacyCallId && legacyArgs) {
                 console.log('[DriveMode]', legacyName, 'tool call detected (legacy format) at path:', path, { callId: legacyCallId });
                 handleToolCall({ callId: legacyCallId, name: legacyName, arguments: legacyArgs });
                 return;
@@ -1191,7 +1673,7 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
                   for (const part of content) {
                     if (part && typeof part === 'object') {
                       const toolCall = extractToolCall(part as Record<string, unknown>);
-                      if (toolCall && (toolCall.name === 'create_memory' || toolCall.name === 'get_protocol' || toolCall.name === 'web_search')) {
+                      if (toolCall && (toolCall.name === 'search_memories' || toolCall.name === 'create_memory' || toolCall.name === 'get_protocol' || toolCall.name === 'web_search' || toolCall.name === 'search_conversations')) {
                         console.log('[DriveMode]', toolCall.name, 'tool call detected in content array', { callId: toolCall.callId, arguments: toolCall.arguments });
                         handleToolCall(toolCall);
                       }
@@ -1296,6 +1778,19 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
           remoteAudioRef.current.srcObject = null;
           try { document.body.removeChild(remoteAudioRef.current); } catch {}
         }
+        // Clean up audio focus element
+        if (audioFocusElementRef.current) {
+          try { audioFocusElementRef.current.pause(); } catch {}
+          try { document.body.removeChild(audioFocusElementRef.current); } catch {}
+          audioFocusElementRef.current = null;
+        }
+        // Release Media Session
+        try {
+          if ('mediaSession' in navigator) {
+            navigator.mediaSession.playbackState = 'none';
+            navigator.mediaSession.metadata = null;
+          }
+        } catch {}
         releaseWakeLock(wakeLockRef.current);
         wakeLockRef.current = null;
         startedRef.current = false;
@@ -1355,6 +1850,19 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
         remoteAudioRef.current.srcObject = null;
         try { document.body.removeChild(remoteAudioRef.current); } catch {}
       }
+      // Clean up audio focus element to release audio focus back to other apps
+      if (audioFocusElementRef.current) {
+        try { audioFocusElementRef.current.pause(); } catch {}
+        try { document.body.removeChild(audioFocusElementRef.current); } catch {}
+        audioFocusElementRef.current = null;
+      }
+      // Release Media Session so other apps can take over
+      try {
+        if ('mediaSession' in navigator) {
+          navigator.mediaSession.playbackState = 'none';
+          navigator.mediaSession.metadata = null;
+        }
+      } catch {}
       dcRef.current = null;
       releaseWakeLock(wakeLockRef.current);
       wakeLockRef.current = null;
@@ -1371,7 +1879,7 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
       try { console.log(`[DriveMode][sid=${sessionIdRef.current}] cleaned up (latest=${isLatest}, established=${wasEstablished})`); } catch {}
       sessionEstablishedRef.current = false;
     };
-  }, [effectiveModel, effectiveVoice, settings.language, settings.audioInputDeviceId, settings.audioOutputDeviceId, settings.autoGreetEnabled, settings.greetingText, settings.bargeInEnabled, settings.stopIntentEnabled, settings.wakeLockEnabled, extractCandidateText, selectedPrePromptId]);
+  }, [effectiveModel, effectiveVoice, settings.language, settings.audioInputDeviceId, settings.audioOutputDeviceId, settings.autoGreetEnabled, settings.greetingText, settings.bargeInEnabled, settings.stopIntentEnabled, settings.wakeLockEnabled, settings.exclusiveAudioFocus, settings.voiceOptimizedAudio, settings.sampleRate, extractCandidateText, selectedPrePromptId]);
 
 // (helper now in useCallback above)
 

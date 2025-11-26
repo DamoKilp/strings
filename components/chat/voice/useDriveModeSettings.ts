@@ -16,6 +16,13 @@ export type DriveModeSettings = {
   // Greeting behavior
   autoGreetEnabled?: boolean;
   greetingText?: string;
+  // Audio focus and quality settings for car/Bluetooth use
+  // - exclusiveAudioFocus: Request exclusive audio focus to pause other apps (like Audible)
+  // - voiceOptimizedAudio: Use voice-optimized audio constraints (mono, echo cancellation, etc.)
+  // - sampleRate: Preferred sample rate for microphone (16000, 24000, or 48000 Hz)
+  exclusiveAudioFocus?: boolean;
+  voiceOptimizedAudio?: boolean;
+  sampleRate?: number;
 };
 
 const STORAGE_KEY = 'ventiaam_drive_mode_settings_v1';
@@ -34,6 +41,12 @@ export function getDefaultDriveModeSettings(): DriveModeSettings {
     audioOutputDeviceId: 'default',
     autoGreetEnabled: true,
     greetingText: 'I\'m ready. How can I help? Keep it short and conversational.',
+    // Audio focus: enabled by default to pause other audio apps (Audible, Spotify, etc.)
+    exclusiveAudioFocus: true,
+    // Voice optimization: enabled by default for better quality in cars/Bluetooth
+    voiceOptimizedAudio: true,
+    // Sample rate: 24kHz is optimal for voice (good quality, lower bandwidth than 48kHz)
+    sampleRate: 24000,
   };
 }
 

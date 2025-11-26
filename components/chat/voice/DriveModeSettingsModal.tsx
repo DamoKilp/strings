@@ -44,6 +44,13 @@ const LANGUAGE_CHOICES = [
   'en-US','en-GB','en-AU','de-DE','fr-FR','es-ES','it-IT','pt-PT','nl-NL','sv-SE','no-NO','da-DK','fi-FI'
 ];
 
+// TEMPORARY: Three latest models for Drive Mode dropdown (only one mini version)
+const THREE_LATEST_MODELS = [
+  'gpt-realtime-mini', // Latest GA mini (default, recommended)
+  'gpt-realtime', // Latest GA full model
+  'gpt-4o-realtime-preview-2025-06-03', // Latest preview full model
+] as const;
+
 export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveModeSettingsModalProps) {
   const { settings, loaded, update } = useDriveModeSettings();
   const defaults = useMemo(getDefaultDriveModeSettings, []);
@@ -54,6 +61,15 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
   const [supportedVoices, setSupportedVoices] = useState<string[] | null>(null);
   const lastVoicesModelRef = useRef<string | null>(null);
   const effectiveModel = activeModel || settings.model || defaults.model;
+  
+  // TEMPORARY: Set mini as default if current model is not in the three latest
+  useEffect(() => {
+    if (!loaded) return;
+    const currentModel = settings.model || defaults.model;
+    if (!THREE_LATEST_MODELS.includes(currentModel as typeof THREE_LATEST_MODELS[number])) {
+      update({ model: 'gpt-realtime-mini' });
+    }
+  }, [loaded, settings.model, defaults.model, update]);
 
   useEffect(() => {
     // Enumerate audio devices when modal mounts (requires https context and permissions)
@@ -239,32 +255,21 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
                   <div className="space-y-2 p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-slate-900/80 backdrop-blur-sm">
                     <Label htmlFor="dm-model" className="text-sm font-medium text-slate-900" style={{ color: 'rgb(15, 23, 42)' }}>Realtime model</Label>
                     {(() => {
-                      const recommended = ['gpt-realtime-mini', 'gpt-realtime'];
-                      const known = [
-                        'gpt-4o-realtime-preview-2025-06-03',
-                        'gpt-4o-realtime-preview-2024-12-17',
-                        'gpt-4o-realtime-preview-2024-10-01',
-                        'gpt-4o-realtime-preview',
-                        'gpt-4o-mini-realtime-preview-2024-12-17',
-                        'gpt-4o-mini-realtime-preview',
-                      ];
-                      const modelOptions = Array.from(new Set([
-                        ...recommended,
-                        defaults.model,
-                        settings.model,
-                        ...known,
-                      ].filter(Boolean)));
+                      // TEMPORARY: Show only the three latest models
+                      const currentModel = settings.model || 'gpt-realtime-mini';
+                      const modelOptions = THREE_LATEST_MODELS.filter(m => 
+                        typeof m === 'string' && m.trim().length > 0
+                      );
+                      
                       return (
-                        <Select value={settings.model} onValueChange={(v) => update({ model: v })}>
+                        <Select value={currentModel} onValueChange={(v) => update({ model: v })}>
                           <SelectTrigger id="dm-model" className="text-slate-900 dark:text-slate-900">
-                            <SelectValue placeholder={defaults.model} />
+                            <SelectValue placeholder="gpt-realtime-mini" />
                           </SelectTrigger>
                           <SelectContent className="text-slate-900 dark:text-slate-900">
-                            {modelOptions
-                              .filter((m) => typeof m === 'string' && m.trim().length > 0)
-                              .map(m => (
-                                <SelectItem key={m} value={m} className="text-slate-900 dark:text-slate-900">{m}</SelectItem>
-                              ))}
+                            {modelOptions.map(m => (
+                              <SelectItem key={m} value={m} className="text-slate-900 dark:text-slate-900">{m}</SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       );
@@ -354,6 +359,47 @@ export function DriveModeSettingsModal({ triggerClassName, activeModel }: DriveM
                       <p className="text-xs text-muted-foreground">Use Wake Lock when available</p>
                     </div>
                     <Switch checked={settings.wakeLockEnabled} onCheckedChange={(v) => update({ wakeLockEnabled: !!v })} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Car/Bluetooth Audio Settings */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-900">Car & Bluetooth Audio</h3>
+                <p className="text-xs text-muted-foreground -mt-2">Optimize voice chat for use in vehicles with Bluetooth audio</p>
+                <div className="space-y-3">
+                  {/* Exclusive Audio Focus */}
+                  <div className="flex items-center justify-between p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-slate-900/80 backdrop-blur-sm">
+                    <div className="space-y-0.5">
+                      <Label className="text-sm font-medium text-slate-900" style={{ color: 'rgb(15, 23, 42)' }}>Exclusive Audio Focus</Label>
+                      <p className="text-xs text-muted-foreground">Pause other apps (Audible, Spotify, etc.) when voice chat starts</p>
+                    </div>
+                    <Switch checked={settings.exclusiveAudioFocus !== false} onCheckedChange={(v) => update({ exclusiveAudioFocus: !!v })} />
+                  </div>
+
+                  {/* Voice Optimized Audio */}
+                  <div className="flex items-center justify-between p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-slate-900/80 backdrop-blur-sm">
+                    <div className="space-y-0.5">
+                      <Label className="text-sm font-medium text-slate-900" style={{ color: 'rgb(15, 23, 42)' }}>Voice Optimized Audio</Label>
+                      <p className="text-xs text-muted-foreground">Use settings optimized for voice in cars (mono, echo cancellation, etc.)</p>
+                    </div>
+                    <Switch checked={settings.voiceOptimizedAudio !== false} onCheckedChange={(v) => update({ voiceOptimizedAudio: !!v })} />
+                  </div>
+
+                  {/* Sample Rate */}
+                  <div className="space-y-2 p-4 rounded-lg border border-white/20 dark:border-white/10 bg-white/20 dark:bg-slate-900/80 backdrop-blur-sm">
+                    <Label htmlFor="dm-samplerate" className="text-sm font-medium text-slate-900" style={{ color: 'rgb(15, 23, 42)' }}>Microphone Sample Rate</Label>
+                    <Select value={String(settings.sampleRate || 24000)} onValueChange={(v) => update({ sampleRate: parseInt(v, 10) })}>
+                      <SelectTrigger id="dm-samplerate" className="text-slate-900 dark:text-slate-900">
+                        <SelectValue placeholder="24000 Hz" />
+                      </SelectTrigger>
+                      <SelectContent className="text-slate-900 dark:text-slate-900">
+                        <SelectItem value="16000" className="text-slate-900 dark:text-slate-900">16 kHz (Bluetooth HFP compatible)</SelectItem>
+                        <SelectItem value="24000" className="text-slate-900 dark:text-slate-900">24 kHz (Recommended for voice)</SelectItem>
+                        <SelectItem value="48000" className="text-slate-900 dark:text-slate-900">48 kHz (High quality)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground mt-1">Lower rates work better with older Bluetooth. 24 kHz is optimal for voice quality.</p>
                   </div>
                 </div>
               </div>
