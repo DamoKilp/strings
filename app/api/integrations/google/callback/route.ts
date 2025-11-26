@@ -1,56 +1,74 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { createClient } from '@/utils/supabase/server';
-import { exchangeGoogleCode } from '@/lib/googleCalendar';
+import { NextRequest, NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
+import { createClient } from '@/utils/supabase/server'
+import { exchangeGoogleCode } from '@/lib/googleCalendar'
+import { resolveSiteUrl } from '@/lib/env'
 
-export const runtime = 'nodejs';
+export const runtime = 'nodejs'
 
-const APP_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+function buildRedirectUrl(baseUrl: string, target?: string | null) {
+  if (target && target.startsWith('/')) {
+    try {
+      return new URL(target, baseUrl)
+    } catch {
+      // fall through to default
+    }
+  }
+  return new URL('/', baseUrl)
+}
 
 export async function GET(request: NextRequest) {
-  const url = new URL(request.url);
-  const code = url.searchParams.get('code');
-  const state = url.searchParams.get('state');
-  const errorParam = url.searchParams.get('error');
+  const url = new URL(request.url)
+  const code = url.searchParams.get('code')
+  const state = url.searchParams.get('state')
+  const errorParam = url.searchParams.get('error')
 
-  const cookieStore = await cookies();
-  const storedState = cookieStore.get('google_oauth_state')?.value;
-  cookieStore.delete('google_oauth_state');
+  const cookieStore = await cookies()
+  const storedState = cookieStore.get('google_oauth_state')?.value
+  cookieStore.delete('google_oauth_state')
 
-  let redirectPath = '/?googleCalendar=connected';
+  const baseUrl = resolveSiteUrl({ headersList: request.headers })
+  let redirectPreference: string | null = null
 
   try {
     if (errorParam) {
-      throw new Error(errorParam);
+      throw new Error(errorParam)
     }
     if (!code) {
-      throw new Error('Missing OAuth code');
+      throw new Error('Missing OAuth code')
     }
     if (!storedState || storedState !== state) {
-      throw new Error('State mismatch');
+      throw new Error('State mismatch')
     }
 
-    const decoded = JSON.parse(Buffer.from(state!, 'base64url').toString());
-    if (decoded?.redirectTo) {
-      redirectPath = decoded.redirectTo;
+    try {
+      const decoded = JSON.parse(Buffer.from(state!, 'base64url').toString())
+      if (typeof decoded?.redirectTo === 'string' && decoded.redirectTo.startsWith('/')) {
+        redirectPreference = decoded.redirectTo
+      }
+    } catch {
+      // Ignore malformed state payloads
     }
 
-    const supabase = await createClient();
+    const supabase = await createClient()
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await supabase.auth.getUser()
     if (!user) {
-      throw new Error('Not authenticated');
+      throw new Error('Not authenticated')
     }
 
-    await exchangeGoogleCode(user.id, code);
-    redirectPath = `${redirectPath}?googleCalendar=connected`;
+    await exchangeGoogleCode(user.id, code)
+    const successUrl = buildRedirectUrl(baseUrl, redirectPreference)
+    successUrl.searchParams.set('googleCalendar', 'connected')
+    return NextResponse.redirect(successUrl)
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'OAuth error';
-    redirectPath = `/?googleCalendar=error&reason=${encodeURIComponent(message)}`;
+    const message = error instanceof Error ? error.message : 'OAuth error'
+    const failureUrl = buildRedirectUrl(baseUrl, redirectPreference)
+    failureUrl.searchParams.set('googleCalendar', 'error')
+    failureUrl.searchParams.set('reason', message)
+    return NextResponse.redirect(failureUrl)
   }
-
-  return NextResponse.redirect(new URL(redirectPath, APP_URL));
 }
 
 

@@ -2,7 +2,32 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import type { EmailOtpType } from '@supabase/supabase-js'
 import { supabase } from '@/utils/supabase/client'
+
+const PKCE_HELP_MESSAGE =
+  'Authentication link expired or was opened in a different browser window. Please request a new link from the same browser where you signed in.'
+
+const EMAIL_OTP_TYPES: EmailOtpType[] = ['signup', 'invite', 'magiclink', 'recovery', 'email_change', 'email']
+const EMAIL_OTP_TYPE_SET = new Set<EmailOtpType>(EMAIL_OTP_TYPES)
+
+function isPkceVerifierError(message?: string | null) {
+  if (!message) return false
+  const normalized = message.toLowerCase()
+  return normalized.includes('code verifier') || normalized.includes('pkce')
+}
+
+function toEmailOtpType(value: string | null): EmailOtpType | null {
+  if (!value) return null
+  const trimmed = value.trim().toLowerCase() as EmailOtpType
+  return EMAIL_OTP_TYPE_SET.has(trimmed) ? trimmed : null
+}
+
+function hasCodeVerifierCookie() {
+  if (typeof document === 'undefined') return null
+  const matcher = /sb-[^=]+-code-verifier=/
+  return matcher.test(document.cookie)
+}
 
 export default function CallbackClient() {
   const router = useRouter()
@@ -80,10 +105,16 @@ export default function CallbackClient() {
           }
         } else if (code) {
           console.debug('[AuthCallback] exchangeCodeForSession, codeLen:', String(code?.length || 0))
+          const observedVerifier = hasCodeVerifierCookie()
+          if (observedVerifier === false) {
+            console.debug('[AuthCallback] code verifier cookie missing before exchange attempt')
+          }
           const { error } = await supabase.auth.exchangeCodeForSession(code)
           if (error) {
-            console.debug('[AuthCallback] exchangeCodeForSession failed, attempting verifyOtp fallback if recovery')
+            console.debug('[AuthCallback] exchangeCodeForSession failed:', error?.message)
             const flowType = queryType || ''
+            const fallbackType = toEmailOtpType(flowType)
+            const fallbackToken = recoveryToken || searchParams.get('token') || code || ''
             if (flowType === 'recovery') {
               const { error: verifyErr } = await supabase.auth.verifyOtp({ token_hash: code, type: 'recovery' })
               if (verifyErr) {
@@ -92,6 +123,30 @@ export default function CallbackClient() {
                 router.replace(`/sign-in?error=auth_code_exchange_failed&message=${encodeURIComponent('Failed to verify authentication code. Please try again.')}`)
                 return
               }
+            } else if (fallbackType && fallbackToken) {
+              console.debug('[AuthCallback] attempting verifyOtp fallback', fallbackType)
+              const { error: otpErr } = await supabase.auth.verifyOtp({
+                token_hash: fallbackToken,
+                type: fallbackType,
+              })
+              if (otpErr) {
+                console.debug('[AuthCallback] verifyOtp fallback failed:', otpErr.message)
+                setStatus('error')
+                setMessage(otpErr.message)
+                router.replace(
+                  `/sign-in?error=auth_code_exchange_failed&message=${encodeURIComponent(
+                    'Failed to verify authentication code. Please request a fresh link.'
+                  )}`
+                )
+                return
+              }
+            } else if (isPkceVerifierError(error.message)) {
+              setStatus('error')
+              setMessage(PKCE_HELP_MESSAGE)
+              router.replace(
+                `/sign-in?error=auth_link_expired&message=${encodeURIComponent(PKCE_HELP_MESSAGE)}`
+              )
+              return
             } else {
               setStatus('error')
               setMessage(error.message)

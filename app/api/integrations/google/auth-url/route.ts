@@ -17,7 +17,8 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json().catch(() => ({}));
-  const redirectTo = typeof body?.redirectTo === 'string' ? body.redirectTo : '/';
+  const redirectTo =
+    typeof body?.redirectTo === 'string' && body.redirectTo.startsWith('/') ? body.redirectTo : '/';
   const statePayload = {
     token: crypto.randomUUID(),
     redirectTo,

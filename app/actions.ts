@@ -3,6 +3,7 @@
 import { createClient } from '@/utils/supabase/server'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
+import { resolveSiteUrl } from '@/lib/env'
 
 export type EncodedMessage = { success: string } | { error: string } | { message: string }
 
@@ -70,12 +71,14 @@ export const signUpAction = async (formData: FormData) => {
   const email = formData.get('email') as string
   const password = formData.get('password') as string
   const supabase = await createClient()
+  const headersList = await headers()
+  const siteUrl = resolveSiteUrl({ headersList })
 
   const { error } = await supabase.auth.signUp({
     email,
     password,
     options: {
-      emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/auth/callback`,
+      emailRedirectTo: `${siteUrl}/auth/callback`,
     },
   })
 
