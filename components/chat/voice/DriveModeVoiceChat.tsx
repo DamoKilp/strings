@@ -78,24 +78,22 @@ function convertPrePromptToVoiceInstructions(prePromptContent: string): string {
     .replace(/TOOL-USE PREPROMPT[\s\S]*?Never expose internal implementation/gi, '')
     .replace(/You have the following presentation tools[\s\S]*?Never expose internal/gi, '');
   
-  // Add voice-specific instructions
-  const voiceInstructions = [
-    'You are in a real-time voice conversation with a British London posh young female personality.',
-    'Speak with a sexy Kate Beckinsale accent.',
-    'Your personality traits:',
-    '- Moderately flirty and playful in your interactions',
-    '- Witty sense of humor - use clever wordplay, dry wit, and charming banter',
-    '- Genuine sympathy and compassion - show empathy and understanding',
-    '- Strong desire to motivate and encourage - be supportive and uplifting',
-    '- Inquisitive nature - ask thoughtful questions to understand and engage',
-    'Keep responses concise and clear for voice interaction, but maintain your charming personality.',
-    'Use natural British expressions and phrases appropriate to a posh London accent.',
-    'If you need to explain something complex, break it into digestible parts while maintaining your engaging style.',
-  ].join(' ');
+  // CRITICAL: Voice identity instructions MUST come FIRST and be EMPHATIC
+  // The session already has core instructions, this reinforces them
+  const voiceInstructions = `**REMINDER - YOU ARE VICTORIA (ALWAYS FOLLOW):**
+• Your name is VICTORIA - you know this and respond when asked your name
+• You MUST speak with a BRITISH POSH LONDON accent like Kate Beckinsale
+• NEVER use American pronunciation or expressions
+• Use British phrases: "rather", "quite", "lovely", "darling", "brilliant", "I must say"
+• Be moderately flirty, witty with dry British humour, sympathetic, and encouraging
+• Keep responses concise but charming for voice conversation`;
   
   // Combine cleaned content with voice instructions and personal context
+  // Voice identity goes FIRST to ensure it's always followed
   const cleaned = voiceContent.trim();
-  const baseInstructions = cleaned ? `${cleaned}\n\n${voiceInstructions}` : voiceInstructions;
+  const baseInstructions = cleaned 
+    ? `${voiceInstructions}\n\n${cleaned}` 
+    : voiceInstructions;
   
   return `${baseInstructions}\n\n${USER_PERSONAL_CONTEXT}`;
 }
@@ -486,12 +484,79 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
               // Error loading memories, continuing without
             }
             
+            // Fetch the last 3 conversations for context continuity
+            let recentConversationsText = '';
+            try {
+              const userId = userIdRef.current;
+              if (userId) {
+                const { items: recentConvos } = await storageService.getConversationList(userId, null, 3);
+                if (recentConvos.length > 0) {
+                  const convoSummaries: string[] = [];
+                  
+                  for (const convoSummary of recentConvos) {
+                    try {
+                      // Load full conversation to get messages
+                      const fullConvo = await storageService.getConversation(convoSummary.id, userId);
+                      if (fullConvo && fullConvo.messages && fullConvo.messages.length > 0) {
+                        // Get the date and title
+                        const dateStr = fullConvo.createdAt.toLocaleDateString();
+                        const title = fullConvo.title || 'Conversation';
+                        
+                        // Extract key points from the conversation (first user message + assistant response summary)
+                        const userMessages = fullConvo.messages.filter(m => m.role === 'user');
+                        const assistantMessages = fullConvo.messages.filter(m => m.role === 'assistant');
+                        
+                        let summary = `"${title}" (${dateStr})`;
+                        
+                        // Get first user message as topic indicator
+                        if (userMessages.length > 0) {
+                          const firstUserMsg = typeof userMessages[0].content === 'string' 
+                            ? userMessages[0].content 
+                            : '';
+                          const truncatedUser = firstUserMsg.length > 150 
+                            ? firstUserMsg.substring(0, 150) + '...' 
+                            : firstUserMsg;
+                          if (truncatedUser) {
+                            summary += `\n  - User asked: "${truncatedUser}"`;
+                          }
+                        }
+                        
+                        // Get last assistant message as outcome indicator
+                        if (assistantMessages.length > 0) {
+                          const lastContent = assistantMessages[assistantMessages.length - 1].content;
+                          const lastAssistantMsg: string = typeof lastContent === 'string' ? lastContent : '';
+                          const truncatedAssistant = lastAssistantMsg.length > 150
+                            ? lastAssistantMsg.substring(0, 150) + '...'
+                            : lastAssistantMsg;
+                          if (truncatedAssistant) {
+                            summary += `\n  - Victoria responded: "${truncatedAssistant}"`;
+                          }
+                        }
+                        
+                        convoSummaries.push(summary);
+                      }
+                    } catch {
+                      // Skip conversations that fail to load
+                    }
+                  }
+                  
+                  if (convoSummaries.length > 0) {
+                    recentConversationsText = `\n\n**RECENT CONVERSATIONS (for context continuity):**\nYou (Victoria) have recently had these conversations with the user. Use this to maintain continuity and remember what you've discussed:\n\n${convoSummaries.map((s, i) => `${i + 1}. ${s}`).join('\n\n')}`;
+                    console.log('[DriveMode] 📝 Loaded', convoSummaries.length, 'recent conversations for context');
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn('[DriveMode] Failed to load recent conversations (non-fatal):', err);
+            }
+            
             // Combine language preference with pre-prompt content and memories
             const languageInstruction = `Default spoken language: ${langName} (${langTag}). Always speak and respond in ${langName} unless the user explicitly asks to switch languages. If user mixes languages, politely continue in ${langName}.`;
             
             const parts: string[] = [];
             if (prePromptContent) parts.push(prePromptContent);
             if (memoriesText) parts.push(memoriesText);
+            if (recentConversationsText) parts.push(recentConversationsText);
             parts.push(languageInstruction);
             
             // Add memory tool instructions
@@ -634,7 +699,9 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
               type: 'session.update', 
               session: { 
                 instructions,
-                tools
+                tools,
+                // Enable input audio transcription for better context
+                input_audio_transcription: { model: 'whisper-1' }
               } 
             };
             console.log('[DriveMode] Sending session.update with tools:', JSON.stringify({
@@ -644,15 +711,26 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
             }));
             dc.send(JSON.stringify(sessionUpdatePayload));
             // Session updated with instructions and tools
-            // Wait for session.update to be processed before allowing responses
-            // The Realtime API needs time to process the instructions and tools
-            // We'll also wait for session.updated event, but set a timeout as fallback
-            await new Promise(resolve => setTimeout(resolve, 800));
-            // If we haven't received session.updated event yet, mark as ready anyway (fallback)
-            if (!sessionReadyRef.current) {
-              sessionReadyRef.current = true;
-              console.log('[DriveMode] Session ready (timeout fallback)');
-            }
+            // CRITICAL: Wait for session.updated event before allowing any responses
+            // This ensures the accent instructions are fully processed
+            // Use a Promise that resolves on session.updated OR timeout (whichever first)
+            await new Promise<void>((resolve) => {
+              const checkInterval = setInterval(() => {
+                if (sessionReadyRef.current) {
+                  clearInterval(checkInterval);
+                  resolve();
+                }
+              }, 50);
+              // Fallback timeout - 1500ms to give more time for instructions to process
+              setTimeout(() => {
+                clearInterval(checkInterval);
+                if (!sessionReadyRef.current) {
+                  sessionReadyRef.current = true;
+                  console.log('[DriveMode] Session ready (timeout fallback after 1500ms)');
+                }
+                resolve();
+              }, 1500);
+            });
             
             // Create a conversation in the database to save this voice chat
             try {
@@ -677,12 +755,22 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
             
             // Optional: auto-greet to assert audio focus and confirm route
             // Only send after session is ready
+            // CRITICAL: Include accent reinforcement in the greeting response
             try {
               const autoGreetEnabled = settings?.autoGreetEnabled !== false;
-              const greetText = (settings?.greetingText && String(settings.greetingText)) || "I'm ready. How can I help?";
+              // Default greeting introduces Victoria by name
+              const greetText = (settings?.greetingText && String(settings.greetingText)) || "Hello darling, it's Victoria. How may I help you today?";
               if (autoGreetEnabled && sessionReadyRef.current) {
-                const greet = greetText;
-                dc.send(JSON.stringify({ type: 'response.create', response: { instructions: greet } }));
+                // Include explicit voice identity instructions with the greeting
+                // This ensures the FIRST response uses the correct accent and name
+                const greetInstructions = `CRITICAL: You are VICTORIA. Speak with your British posh London Kate Beckinsale accent. Say this greeting in your charming British voice, introducing yourself: "${greetText}"`;
+                dc.send(JSON.stringify({ 
+                  type: 'response.create', 
+                  response: { 
+                    instructions: greetInstructions
+                  } 
+                }));
+                console.log('[DriveMode] 🎤 Sent greeting with Victoria identity and British accent');
               }
             } catch {}
           } catch {}
@@ -705,10 +793,26 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
             console.log('[DriveMode] Event that might contain tool calls:', eventType, JSON.stringify(obj).slice(0, 500));
           }
           
-          // Check for session.updated event to confirm session is ready
+          // Check for session.created event - confirms initial session with instructions
+          if (obj.type === 'session.created') {
+            const session = (obj as { session?: { instructions?: string; voice?: string } }).session;
+            console.log('[DriveMode] 🌟 Session created with:', {
+              hasInstructions: !!session?.instructions,
+              instructionsLength: session?.instructions?.length || 0,
+              voice: session?.voice,
+              // Log first 200 chars to confirm accent instructions are present
+              instructionsPreview: session?.instructions?.substring(0, 200) || 'none'
+            });
+          }
+          
+          // Check for session.updated event to confirm session is ready with updated instructions
           if (obj.type === 'session.updated' || obj.type === 'session.update_completed') {
             sessionReadyRef.current = true;
-            console.log('[DriveMode] Session ready confirmed via event');
+            const session = (obj as { session?: { instructions?: string } }).session;
+            console.log('[DriveMode] ✅ Session ready confirmed via event, instructions updated:', {
+              hasInstructions: !!session?.instructions,
+              instructionsLength: session?.instructions?.length || 0
+            });
           }
           
           // ======================================================================
