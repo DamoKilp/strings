@@ -566,7 +566,7 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
             const voiceCommandInstructions = `\n\n**Voice Commands & Protocols (IMPORTANT):**\nWhen the user mentions ANY of these phrases, you MUST use the get_protocol tool FIRST before doing anything else:\n- "run protocol", "run the [name] protocol", "execute protocol"\n- "follow protocol", "apply protocol", "use protocol"\n- "run voice protocol", "start protocol"\n\n**CRITICAL PROTOCOL WORKFLOW:**\n1. When user says "run the News protocol" or similar, call get_protocol with protocolName="News"\n2. The get_protocol tool will return the actual instructions stored in that protocol\n3. You MUST then follow those returned instructions exactly (which may include web searches, specific actions, etc.)\n4. Do NOT guess what a protocol does - ALWAYS retrieve it first\n\nProtocols are stored instructions that tell you exactly what to do. They may contain multi-step workflows like "search for X, then search for Y, then summarize". You must retrieve the protocol content first to know what actions to take.`;
             
             // Add web search instructions
-            const webSearchInstructions = `\n\n**Web Search:**\nYou have access to a web_search tool that allows you to search the internet for current information. Use this tool when:\n- The user asks about current events, recent news, or up-to-date information\n- The user explicitly asks you to "search online", "look it up", "check the web", or similar phrases\n- You need real-time information that may not be in your training data\n- The user asks about "today", "this week", "latest", "current" information\n\n**IMPORTANT for news searches:** When searching for NEWS or HEADLINES, you MUST set searchType to "news". This ensures you get actual news articles instead of generic information. Example: for "Western Australian news today", use query="Western Australian news today" and searchType="news".\n\nWhen using web search, summarize the results concisely for voice consumption. Keep responses natural and conversational.`;
+            const webSearchInstructions = `\n\n**Web Search (YOU CAN SEARCH FOR ANYTHING):**\nYou have FULL ACCESS to search the internet for ANY topic. ALWAYS use web_search when:\n- The user asks about ANY current information (sports, news, weather, stocks, events)\n- The user wants to look up facts, research topics, find places, get recommendations\n- The user asks "what is", "how to", "where can I", "who won", "latest", "best"\n- You need information beyond your training data\n\n**NEVER say you cannot search for something** - you can search for ANY topic!\n\n**Search Depth - Choose based on query complexity:**\n- "basic" = Quick facts, simple answers (2-3 results) - use for: sports scores, weather, simple facts\n- "medium" = Balanced search (5 results, default) - use for: general questions, recommendations\n- "deep" = Comprehensive research (10+ results) - use for: complex topics, research, comparisons\n\n**Search Types:**\n- searchType="news" for news articles and headlines\n- searchType="general" for everything else (sports, facts, how-to, recommendations, etc.)\n\nSummarize results concisely for voice. Be natural and conversational.`;
             
             // Add conversation search instructions
             const conversationSearchInstructions = `\n\n**Previous Conversations:**\nYou have access to a search_conversations tool that searches through ALL previous conversations (both text and voice chats) with the user. Use this when:\n- The user asks "what did we talk about", "remember when we discussed", "look at our previous conversations"\n- The user wants to find a specific past conversation or topic\n- The user references something from a previous chat\n\nThis searches the full conversation history stored in the database, so you can find any past discussion.`;
@@ -647,24 +647,23 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
               {
                 type: 'function',
                 name: 'web_search',
-                description: 'Search the internet for current information, news, or real-time data. Use this when the user asks about current events, recent information, or explicitly requests a web search. IMPORTANT: When searching for NEWS or HEADLINES, you MUST set searchType to "news" to get actual news articles.',
+                description: 'Search the internet for ANY topic - sports scores, news, weather, facts, research, entertainment, technology, science, health, finance, travel, recipes, how-to guides, and more. Use this whenever you need current information or to look up ANYTHING. NEVER say you cannot search for something - you can search for ANY topic!',
                 parameters: {
                   type: 'object',
                   properties: {
                     query: {
                       type: 'string',
-                      description: 'The search query to look up on the web. Should be clear and specific (e.g., "current weather in Perth Australia", "latest news about OpenAI", "today\'s stock market prices")'
+                      description: 'The search query. Be specific for better results (e.g., "Perth Scorchers vs Sydney Sixers score", "best Italian restaurants near Fremantle", "how to fix a leaking tap")'
                     },
-                    maxResults: {
-                      type: 'number',
-                      minimum: 1,
-                      maximum: 10,
-                      description: 'Maximum number of search results to return. Default is 5. Use fewer results for voice responses to keep them concise.'
+                    searchDepth: {
+                      type: 'string',
+                      enum: ['basic', 'medium', 'deep'],
+                      description: 'How thorough the search should be. "basic" = quick answer (2-3 results), "medium" = balanced (5 results, default), "deep" = comprehensive research (10+ results). Choose based on complexity: basic for simple facts, medium for general queries, deep for research or complex topics.'
                     },
                     searchType: {
                       type: 'string',
                       enum: ['general', 'news'],
-                      description: 'Type of search. Use "news" when searching for news articles, headlines, current events, or recent happenings. Use "general" for other searches. Default is "general".'
+                      description: 'Type of search. Use "news" for news articles, headlines, current events. Use "general" for everything else including sports scores, facts, how-to, etc. Default is "general".'
                     }
                   },
                   required: ['query']
@@ -1310,7 +1309,7 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
             processedCallIdsRef.current.add(callId);
             
             try {
-const searchInput = input as { query?: string; maxResults?: number; searchType?: string };
+              const searchInput = input as { query?: string; searchDepth?: string; searchType?: string };
               console.log('[DriveMode] web_search input:', JSON.stringify(searchInput));
               
               if (!searchInput?.query) {
@@ -1333,7 +1332,15 @@ const searchInput = input as { query?: string; maxResults?: number; searchType?:
               }
               
               const query = searchInput.query.trim();
-              const maxResults = searchInput.maxResults || 5;
+              // Determine maxResults based on searchDepth
+              const depthToResults: Record<string, number> = {
+                'basic': 3,
+                'medium': 5,
+                'deep': 12
+              };
+              const searchDepth = searchInput.searchDepth || 'medium';
+              const maxResults = depthToResults[searchDepth] || 5;
+              console.log('[DriveMode] 🔍 Search depth:', searchDepth, '→', maxResults, 'results');
               
               console.log('[DriveMode] 🔍 Searching web for:', query);
               
@@ -1599,12 +1606,45 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
                   if (results.length >= limit) break;
                 }
               } else {
-                // No query - just return recent conversations
-                results = conversations.slice(0, limit).map(c => ({
-                  title: c.title || 'Untitled',
-                  date: c.createdAt.toLocaleDateString(),
-                  preview: c.firstMessagePreview || '(No preview)'
-                }));
+                // No query - load full conversations to show what was actually discussed
+                for (const convoSummary of conversations.slice(0, limit)) {
+                  try {
+                    const fullConvo = await storageService.getConversation(convoSummary.id, userId);
+                    if (fullConvo && fullConvo.messages && fullConvo.messages.length > 0) {
+                      // Get actual message content, not just titles
+                      const userMessages = fullConvo.messages.filter(m => m.role === 'user');
+                      const assistantMessages = fullConvo.messages.filter(m => m.role === 'assistant');
+                      
+                      // Build a summary of what was discussed
+                      let discussionSummary = '';
+                      
+                      // Get first few user messages to understand the topics
+                      const topicMessages = userMessages.slice(0, 3);
+                      if (topicMessages.length > 0) {
+                        const topics = topicMessages.map(m => {
+                          const content = typeof m.content === 'string' ? m.content : '';
+                          return content.length > 80 ? content.substring(0, 80) + '...' : content;
+                        }).filter(t => t).join(' | ');
+                        discussionSummary = topics;
+                      }
+                      
+                      // If no user messages, try assistant messages
+                      if (!discussionSummary && assistantMessages.length > 0) {
+                        const firstAssistant = assistantMessages[0];
+                        const content = typeof firstAssistant.content === 'string' ? firstAssistant.content : '';
+                        discussionSummary = content.length > 100 ? content.substring(0, 100) + '...' : content;
+                      }
+                      
+                      results.push({
+                        title: fullConvo.title || 'Conversation',
+                        date: fullConvo.createdAt.toLocaleDateString(),
+                        preview: discussionSummary || '(Empty conversation)'
+                      });
+                    }
+                  } catch {
+                    // Skip conversations that fail to load
+                  }
+                }
               }
               
               let output: string;
