@@ -23,13 +23,15 @@
    - Copy the client ID/secret into `.env` as `Google_Client_ID` and `Google_secret`. Restart the dev server after changes.
 
 3. **App Configuration**
-   - `/api/integrations/google/auth-url` now only accepts same-origin redirect targets and stores the state cookie for 10 minutes.
+   - Scope now requests full calendar access (`https://www.googleapis.com/auth/calendar`) so Victoria can create/update/delete events. If you connected previously with readonly scope, simply reconnect to upgrade permissions.
+   - `/api/integrations/google/auth-url` only accepts same-origin redirect targets and stores the state cookie for 10 minutes.
    - `/api/integrations/google/callback` resolves the base URL at runtime, so preview deployments send you back to the page you started from.
    - Successful connects set `?googleCalendar=connected`; failures set `?googleCalendar=error&reason=...`, which surfaces through the routines UI.
 
 4. **Validation Flow**
    - Sign in, connect the calendar, then call `GET /api/integrations/google/status` to confirm `connected: true`.
    - Run Morning Briefing / Proactive Check-in; they should mention upcoming events.
+   - To test writes: `POST /api/integrations/google/events` to create, `PATCH /api/integrations/google/events/:id` to update, `DELETE /api/integrations/google/events/:id` to remove. Drive Mode now exposes voice tools to perform these actions.
    - To reset access run `DELETE /api/integrations/google/status`, then reconnect.
 
 

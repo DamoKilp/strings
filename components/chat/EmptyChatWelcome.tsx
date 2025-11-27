@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import {
   Mic,
   ArrowRight,
@@ -34,6 +34,36 @@ export default function EmptyChatWelcome({
   className,
 }: EmptyChatWelcomeProps) {
   const [hoveredCard, setHoveredCard] = useState<string | null>(null)
+  const [calendarConnected, setCalendarConnected] = useState<boolean | null>(null)
+  const [calendarReady, setCalendarReady] = useState<boolean | null>(null)
+
+  const refreshCalendarStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/integrations/google/status', { cache: 'no-store' })
+      if (!res.ok) {
+        setCalendarConnected(false)
+        setCalendarReady(false)
+        return
+      }
+      const data = await res.json()
+      const connected = Boolean(data?.connected)
+      setCalendarConnected(connected)
+      if (!connected) {
+        setCalendarReady(false)
+        return
+      }
+      // Light-touch availability probe; success implies token is valid, even if zero events
+      const ev = await fetch('/api/integrations/google/events?maxResults=1', { cache: 'no-store' })
+      setCalendarReady(ev.ok)
+    } catch {
+      setCalendarConnected(false)
+      setCalendarReady(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    refreshCalendarStatus()
+  }, [refreshCalendarStatus])
 
   const updateTiles: {
     key: string
@@ -73,8 +103,10 @@ export default function EmptyChatWelcome({
     {
       key: 'calendar',
       icon: CalendarDays,
-      label: 'Connect Calendar',
-      description: 'Use upcoming events in chat',
+      label: calendarConnected ? 'Calendar Connected' : 'Connect Calendar',
+      description: calendarConnected
+        ? (calendarReady ? 'Events accessible' : 'Connected • checking access...')
+        : 'Use upcoming events in chat',
       onClick: onConnectCalendar,
     },
   ]
@@ -98,6 +130,19 @@ export default function EmptyChatWelcome({
               Designed for mobile-first use. Start Drive Mode for hands-free conversations, or tap a routine to run Update
               2.0 features.
             </p>
+            {/* Calendar connection status pill */}
+            <div className="flex justify-center">
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-semibold border ${
+                calendarConnected
+                  ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                  : 'bg-slate-500/15 border-slate-400/30 text-slate-300'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${calendarConnected ? 'bg-emerald-400' : 'bg-slate-400'}`} />
+                {calendarConnected
+                  ? (calendarReady ? 'Google Calendar: Connected' : 'Google Calendar: Connected (verifying...)')
+                  : 'Google Calendar: Not connected'}
+              </span>
+            </div>
           </div>
 
           {/* Primary Drive Mode call-to-action */}

@@ -15,10 +15,14 @@ export async function updateSession(request: NextRequest) {
   });
 
   const urlWithCode = new URL(request.url);
+  const pathname = urlWithCode.pathname;
   const hasAuthCode = urlWithCode.searchParams.has('code');
   const hasRecoveryToken = urlWithCode.searchParams.has('token') && urlWithCode.searchParams.get('type') === 'recovery';
   const isAlreadyCallback = urlWithCode.pathname === '/auth/callback';
-  if ((hasAuthCode || hasRecoveryToken) && !isAlreadyCallback) {
+  // Do not hijack API callbacks (e.g., Google OAuth) that also use ?code=
+  const isApiRouteEarly = pathname.startsWith('/api/');
+  const isGoogleOAuthCallback = pathname.startsWith('/api/integrations/google/callback');
+  if ((hasAuthCode || hasRecoveryToken) && !isAlreadyCallback && !isApiRouteEarly && !isGoogleOAuthCallback) {
     const callbackUrl = new URL('/auth/callback', urlWithCode.origin);
     urlWithCode.searchParams.forEach((value, key) => {
       callbackUrl.searchParams.set(key, value);
@@ -49,7 +53,6 @@ export async function updateSession(request: NextRequest) {
   );
   const { data: { user: finalUser } } = await supabase.auth.getUser();
   const url = request.nextUrl.clone();
-  const pathname = url.pathname;
 
   if (pathname.startsWith('/api/') || pathname.startsWith('/_next/') || pathname.includes('.')) {
     return response;

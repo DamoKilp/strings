@@ -628,11 +628,14 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
             // Add Update 2.0 features instructions
             const update20Instructions = `\n\n**UPDATE 2.0 FEATURES - NEW ASSISTANT CAPABILITIES:**\nThe app has been updated with Update 2.0, which includes five powerful new features. When the user asks "what features are available", "tell me about recent updates", "explain update 2.0", "what's new in the app", "what features can I use", or similar questions, you MUST explain these features in simple, friendly, conversational terms:\n\n1. **Morning Briefing** - I can give you a personalised morning summary that includes:\n   - Your recent memories and important things I've learned about you\n   - Today's weather forecast\n   - Your upcoming calendar events (if you've connected Google Calendar)\n   - Your active habits that need attention\n   Just ask me for a "morning briefing" or say "give me my morning update" and I'll compile everything for you!\n\n2. **Habit Tracker** - I can help you track and build good habits! You can:\n   - Create habits you want to maintain (like "exercise daily" or "read for 30 minutes")\n   - I'll remind you about them and help you log when you complete them\n   - Track your streaks and progress over time\n   - Set up daily or weekly habits with custom reminder times\n   Say "show me my habits" or "help me track a habit" to get started!\n\n3. **Proactive Check-ins** - I can automatically check in with you at smart times:\n   - After important calendar events (like "How did your meeting go?")\n   - At scheduled intervals to see how you're doing\n   - I'll ask thoughtful questions to help you reflect and capture important moments\n   You can enable this in your routine settings, and I'll reach out when it makes sense!\n\n4. **Google Calendar Integration** - I can connect to your Google Calendar to:\n   - See your upcoming events and appointments\n   - Reference your schedule in our conversations\n   - Personalise check-ins based on what you have coming up\n   - Include calendar events in your morning briefings\n   Just connect your calendar once, and I'll keep it in mind for all our chats!\n\n5. **Weekly Review** - Every week, I can give you a helpful summary:\n   - What habits you've maintained well (highlights!)\n   - Areas where you might want to focus more attention\n   - A personalised summary of your week's progress\n   - Suggestions for the week ahead\n   Ask for a "weekly review" and I'll analyse your week and give you insights!\n\n**How to use Update 2.0 features:**\n- You can trigger these features by asking me directly (e.g., "give me a morning briefing", "show my habits", "weekly review")\n- In the text chat interface, there's a Routines Bar with buttons for quick access\n- Some features (like proactive check-ins) work automatically once enabled\n- All features work in both voice and text chat - just ask naturally!\n\nWhen explaining these features, be enthusiastic and helpful! Use simple language, give practical examples, and explain how they help the user in their daily life. Speak naturally as Victoria with your British charm!`;
             
-            const instructions = parts.length > 0
-              ? `${parts.join('\n\n')}${memoryToolInstructions}${voiceCommandInstructions}${webSearchInstructions}${conversationSearchInstructions}${codeToolsInstructions}${update20Instructions}`
-              : `${languageInstruction}\n\nYou are a helpful AI assistant in a real-time voice conversation. Speak naturally, keep responses concise, and vary your phrasing to avoid repetition.${memoryToolInstructions}${voiceCommandInstructions}${webSearchInstructions}${conversationSearchInstructions}${codeToolsInstructions}${update20Instructions}`;
+            // Calendar tool usage guidance
+            const calendarToolInstructions = `\n\n**Google Calendar Tools (YOU CAN ACCESS THE USER'S CALENDAR):**\nWhen the user asks about their schedule, meetings, availability, or to \"check my calendar\", you MUST:\n1) Call calendar_status first to see if access is connected.\n2) If connected, call calendar_events to fetch upcoming items, then summarise them naturally for voice.\n3) If not connected, offer to help connect the calendar.\nNever claim you cannot access the calendar without trying the tools. Keep summaries concise and useful for driving.`
             
-            // Add memory creation, protocol retrieval, and web search tools to session
+            const instructions = parts.length > 0
+              ? `${parts.join('\n\n')}${memoryToolInstructions}${voiceCommandInstructions}${webSearchInstructions}${conversationSearchInstructions}${codeToolsInstructions}${update20Instructions}${calendarToolInstructions}`
+              : `${languageInstruction}\n\nYou are a helpful AI assistant in a real-time voice conversation. Speak naturally, keep responses concise, and vary your phrasing to avoid repetition.${memoryToolInstructions}${voiceCommandInstructions}${webSearchInstructions}${conversationSearchInstructions}${codeToolsInstructions}${update20Instructions}${calendarToolInstructions}`;
+            
+            // Add memory creation, protocol retrieval, web search, and calendar tools to session
             const tools = [
               {
                 type: 'function',
@@ -822,6 +825,93 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
                     }
                   },
                   required: ['query', 'projectPath']
+                }
+              },
+              // GOOGLE CALENDAR TOOLS
+              {
+                type: 'function',
+                name: 'calendar_status',
+                description: 'Get Google Calendar connection status. Always call this before fetching events. If not connected, tell the user succinctly how to connect.',
+                parameters: {
+                  type: 'object',
+                  properties: {},
+                  required: []
+                }
+              },
+              {
+                type: 'function',
+                name: 'calendar_events',
+                description: 'Fetch upcoming Google Calendar events for the user and summarise them concisely for voice. Use after calendar_status indicates connection.',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    maxResults: {
+                      type: 'number',
+                      minimum: 1,
+                      maximum: 10,
+                      description: 'Maximum number of upcoming events to include. Default 5.'
+                    }
+                  },
+                  required: []
+                }
+              },
+              {
+                type: 'function',
+                name: 'calendar_add_event',
+                description: 'Create a new Google Calendar event. Provide either startDateTime/endDateTime or allDay with date. If endDateTime is omitted, durationMinutes is used.',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    title: { type: 'string', description: 'Event title/summary' },
+                    startDateTime: { type: 'string', description: 'ISO start datetime, e.g., 2025-01-10T09:00:00+08:00' },
+                    endDateTime: { type: 'string', description: 'ISO end datetime. Optional if durationMinutes provided.' },
+                    durationMinutes: { type: 'number', description: 'Duration if endDateTime not supplied (default 30)' },
+                    allDay: { type: 'boolean', description: 'Create an all-day event' },
+                    date: { type: 'string', description: 'All-day event date (YYYY-MM-DD)' },
+                    endDate: { type: 'string', description: 'All-day end date (YYYY-MM-DD), optional' },
+                    timeZone: { type: 'string', description: 'IANA time zone (e.g., Australia/Perth). Optional.' },
+                    location: { type: 'string', description: 'Location or address' },
+                    attendees: { type: 'array', items: { type: 'string' }, description: 'Attendee emails' },
+                    remindersMinutes: { type: 'array', items: { type: 'number' }, description: 'Popup reminders in minutes' },
+                    createMeetLink: { type: 'boolean', description: 'Create a Google Meet link' }
+                  },
+                  required: ['title']
+                }
+              },
+              {
+                type: 'function',
+                name: 'calendar_update_event',
+                description: 'Update an existing event by ID. Provide any fields to change.',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string', description: 'Event ID to update' },
+                    title: { type: 'string' },
+                    startDateTime: { type: 'string' },
+                    endDateTime: { type: 'string' },
+                    durationMinutes: { type: 'number' },
+                    allDay: { type: 'boolean' },
+                    date: { type: 'string' },
+                    endDate: { type: 'string' },
+                    timeZone: { type: 'string' },
+                    location: { type: 'string' },
+                    attendees: { type: 'array', items: { type: 'string' } },
+                    remindersMinutes: { type: 'array', items: { type: 'number' } },
+                    createMeetLink: { type: 'boolean' }
+                  },
+                  required: ['id']
+                }
+              },
+              {
+                type: 'function',
+                name: 'calendar_delete_event',
+                description: 'Delete a Google Calendar event by ID.',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string', description: 'Event ID to delete' }
+                  },
+                  required: ['id']
                 }
               }
             ];
@@ -1578,6 +1668,239 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
             }
           };
           
+          // Handle calendar_status tool
+          const handleCalendarStatus = async (callId: string) => {
+            if (processedCallIdsRef.current.has(callId)) {
+              console.log('[DriveMode] calendar_status: already processed call_id', callId);
+              return;
+            }
+            processedCallIdsRef.current.add(callId);
+            try {
+              const resp = await fetch('/api/integrations/google/status', { cache: 'no-store' });
+              let output = 'Calendar status is unavailable.';
+              if (resp.ok) {
+                const data = await resp.json() as { connected?: boolean; expiry_date?: string | null; scope?: string | null };
+                output = data?.connected
+                  ? 'Google Calendar is connected.'
+                  : 'Google Calendar is not connected.';
+              }
+              if (dc.readyState === 'open') {
+                dc.send(JSON.stringify({
+                  type: 'conversation.item.create',
+                  item: { type: 'function_call_output', call_id: callId, output }
+                }));
+                dc.send(JSON.stringify({ type: 'response.create' }));
+              }
+            } catch (err) {
+              console.error('[DriveMode] calendar_status: error', err);
+              try {
+                if (dc.readyState === 'open') {
+                  dc.send(JSON.stringify({
+                    type: 'conversation.item.create',
+                    item: { type: 'function_call_output', call_id: callId, output: 'Error checking calendar status.' }
+                  }));
+                  dc.send(JSON.stringify({ type: 'response.create' }));
+                }
+              } catch {}
+            }
+          };
+
+          // Handle calendar_events tool
+          const handleCalendarEvents = async (callId: string, input: Record<string, unknown>) => {
+            if (processedCallIdsRef.current.has(callId)) {
+              console.log('[DriveMode] calendar_events: already processed call_id', callId);
+              return;
+            }
+            processedCallIdsRef.current.add(callId);
+            try {
+              const { maxResults } = (input || {}) as { maxResults?: number };
+              const n = Math.min(Math.max(Number(maxResults || 5), 1), 10);
+              const resp = await fetch(`/api/integrations/google/events?maxResults=${encodeURIComponent(String(n))}`, { cache: 'no-store' });
+              if (!resp.ok) {
+                const msg = 'Unable to fetch upcoming events. Please try again.';
+                if (dc.readyState === 'open') {
+                  dc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output: msg } }));
+                  dc.send(JSON.stringify({ type: 'response.create' }));
+                }
+                return;
+              }
+              const data = await resp.json() as { events?: Array<{ title?: string; start?: string; end?: string | null; location?: string | null }>; };
+              const events = Array.isArray(data?.events) ? data.events : [];
+              let output: string;
+              if (events.length === 0) {
+                output = 'You have no upcoming events in the next few days.';
+              } else {
+                const lines: string[] = [];
+                for (const ev of events) {
+                  const title = (ev.title || 'Untitled').trim();
+                  const startIso = ev.start || '';
+                  let timeText = '';
+                  try {
+                    const d = new Date(startIso);
+                    timeText = isNaN(d.getTime()) ? '' : d.toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+                  } catch {}
+                  const where = ev.location ? ` at ${ev.location}` : '';
+                  lines.push(`${timeText ? timeText + ': ' : ''}${title}${where}`.trim());
+                }
+                output = `Here are your next ${events.length === 1 ? 'event' : 'events'}:\n\n${lines.join('\n')}`;
+              }
+              if (dc.readyState === 'open') {
+                dc.send(JSON.stringify({
+                  type: 'conversation.item.create',
+                  item: { type: 'function_call_output', call_id: callId, output }
+                }));
+                dc.send(JSON.stringify({ type: 'response.create' }));
+              }
+            } catch (err) {
+              console.error('[DriveMode] calendar_events: error', err);
+              try {
+                if (dc.readyState === 'open') {
+                  dc.send(JSON.stringify({
+                    type: 'conversation.item.create',
+                    item: { type: 'function_call_output', call_id: callId, output: 'Error fetching calendar events.' }
+                  }));
+                  dc.send(JSON.stringify({ type: 'response.create' }));
+                }
+              } catch {}
+            }
+          };
+
+          // Handle calendar_add_event tool
+          const handleCalendarAddEvent = async (callId: string, input: Record<string, unknown>) => {
+            if (processedCallIdsRef.current.has(callId)) {
+              console.log('[DriveMode] calendar_add_event: already processed call_id', callId);
+              return;
+            }
+            processedCallIdsRef.current.add(callId);
+            try {
+              const payload = input as {
+                title?: string;
+                startDateTime?: string;
+                endDateTime?: string;
+                durationMinutes?: number;
+                allDay?: boolean;
+                date?: string;
+                endDate?: string;
+                timeZone?: string;
+                location?: string;
+                attendees?: string[];
+                remindersMinutes?: number[];
+                createMeetLink?: boolean;
+              };
+              if (!payload.title || !payload.title.trim()) {
+                throw new Error('Title is required to add an event.');
+              }
+              // Default timezone if not provided
+              if (!payload.timeZone) {
+                try { payload.timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch {}
+              }
+              const resp = await fetch('/api/integrations/google/events', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+              });
+              if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(err?.error || `Failed to create event (${resp.status})`);
+              }
+              const data = await resp.json();
+              const ev = data?.event;
+              let when = '';
+              try {
+                const startIso = ev?.start?.dateTime || ev?.start?.date;
+                if (startIso) {
+                  const d = new Date(startIso);
+                  when = isNaN(d.getTime()) ? '' : d.toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+                }
+              } catch {}
+              const output = ev?.summary ? `Created "${ev.summary}"${when ? ` for ${when}` : ''}.` : 'Event created.';
+              if (dc.readyState === 'open') {
+                dc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output } }));
+                dc.send(JSON.stringify({ type: 'response.create' }));
+              }
+            } catch (err) {
+              const message = err instanceof Error ? err.message : 'Error creating calendar event.';
+              console.error('[DriveMode] calendar_add_event: error', err);
+              try {
+                if (dc.readyState === 'open') {
+                  dc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output: message } }));
+                  dc.send(JSON.stringify({ type: 'response.create' }));
+                }
+              } catch {}
+            }
+          };
+
+          // Handle calendar_update_event tool
+          const handleCalendarUpdateEvent = async (callId: string, input: Record<string, unknown>) => {
+            if (processedCallIdsRef.current.has(callId)) {
+              console.log('[DriveMode] calendar_update_event: already processed call_id', callId);
+              return;
+            }
+            processedCallIdsRef.current.add(callId);
+            try {
+              const payload = input as { id?: string } & Record<string, unknown>;
+              if (!payload.id) throw new Error('Event id is required.');
+              const { id, ...body } = payload;
+              const resp = await fetch(`/api/integrations/google/events/${encodeURIComponent(String(id))}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+              });
+              if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(err?.error || `Failed to update event (${resp.status})`);
+              }
+              const data = await resp.json();
+              const ev = data?.event;
+              const output = ev?.summary ? `Updated "${ev.summary}".` : 'Event updated.';
+              if (dc.readyState === 'open') {
+                dc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output } }));
+                dc.send(JSON.stringify({ type: 'response.create' }));
+              }
+            } catch (err) {
+              const message = err instanceof Error ? err.message : 'Error updating calendar event.';
+              console.error('[DriveMode] calendar_update_event: error', err);
+              try {
+                if (dc.readyState === 'open') {
+                  dc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output: message } }));
+                  dc.send(JSON.stringify({ type: 'response.create' }));
+                }
+              } catch {}
+            }
+          };
+
+          // Handle calendar_delete_event tool
+          const handleCalendarDeleteEvent = async (callId: string, input: Record<string, unknown>) => {
+            if (processedCallIdsRef.current.has(callId)) {
+              console.log('[DriveMode] calendar_delete_event: already processed call_id', callId);
+              return;
+            }
+            processedCallIdsRef.current.add(callId);
+            try {
+              const { id } = (input || {}) as { id?: string };
+              if (!id) throw new Error('Event id is required.');
+              const resp = await fetch(`/api/integrations/google/events/${encodeURIComponent(String(id))}`, { method: 'DELETE' });
+              if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(err?.error || `Failed to delete event (${resp.status})`);
+              }
+              const output = 'Event deleted.';
+              if (dc.readyState === 'open') {
+                dc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output } }));
+                dc.send(JSON.stringify({ type: 'response.create' }));
+              }
+            } catch (err) {
+              const message = err instanceof Error ? err.message : 'Error deleting calendar event.';
+              console.error('[DriveMode] calendar_delete_event: error', err);
+              try {
+                if (dc.readyState === 'open') {
+                  dc.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output: message } }));
+                  dc.send(JSON.stringify({ type: 'response.create' }));
+                }
+              } catch {}
+            }
+          };
+
           // Handle search_memories tool
           const handleMemorySearch = async (callId: string, input: Record<string, unknown>) => {
             // Prevent duplicate processing
@@ -1938,7 +2261,8 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
           // All supported tool names
           const SUPPORTED_TOOLS = [
             'search_memories', 'create_memory', 'get_protocol', 'web_search', 'search_conversations',
-            'get_project_info', 'read_code_file', 'git_recent_changes', 'search_code'
+            'get_project_info', 'read_code_file', 'git_recent_changes', 'search_code',
+            'calendar_status', 'calendar_events', 'calendar_add_event', 'calendar_update_event', 'calendar_delete_event'
           ];
           
           // Helper to handle tool calls based on name
@@ -1970,6 +2294,21 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
             } else if (toolCall.name === 'search_code') {
               console.log('[DriveMode] search_code tool call detected', { callId: toolCall.callId });
               handleCodeTool(toolCall.callId, 'search_code', toolCall.arguments);
+            } else if (toolCall.name === 'calendar_status') {
+              console.log('[DriveMode] calendar_status tool call detected', { callId: toolCall.callId });
+              handleCalendarStatus(toolCall.callId);
+            } else if (toolCall.name === 'calendar_events') {
+              console.log('[DriveMode] calendar_events tool call detected', { callId: toolCall.callId, arguments: toolCall.arguments });
+              handleCalendarEvents(toolCall.callId, toolCall.arguments);
+            } else if (toolCall.name === 'calendar_add_event') {
+              console.log('[DriveMode] calendar_add_event tool call detected', { callId: toolCall.callId, arguments: toolCall.arguments });
+              handleCalendarAddEvent(toolCall.callId, toolCall.arguments);
+            } else if (toolCall.name === 'calendar_update_event') {
+              console.log('[DriveMode] calendar_update_event tool call detected', { callId: toolCall.callId, arguments: toolCall.arguments });
+              handleCalendarUpdateEvent(toolCall.callId, toolCall.arguments);
+            } else if (toolCall.name === 'calendar_delete_event') {
+              console.log('[DriveMode] calendar_delete_event tool call detected', { callId: toolCall.callId, arguments: toolCall.arguments });
+              handleCalendarDeleteEvent(toolCall.callId, toolCall.arguments);
             }
           };
           
