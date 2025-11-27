@@ -75,6 +75,22 @@ export interface AssistantRoutineStatus {
 
 export type AssistantRoutineType = 'morning_briefing' | 'habit_checkin' | 'weekly_review' | 'proactive_checkin';
 
+// Shared email types for Gmail integration (server + client)
+export interface EmailSummary {
+  id: string;
+  threadId: string;
+  subject: string;
+  from: string;
+  snippet: string;
+  date: string; // ISO-8601 string
+  isUnread: boolean;
+  labels: string[];
+}
+
+export interface EmailDetail extends EmailSummary {
+  bodyText: string;
+}
+
 // Define MessageRole type
 export type MessageRole = 'user' | 'assistant' | 'system' | 'function' | 'tool' | 'data';
 

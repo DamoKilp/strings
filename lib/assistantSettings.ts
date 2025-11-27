@@ -36,10 +36,14 @@ export type GoogleCalendarToken = {
   expiryDate?: string | null;
 };
 
+// Gmail uses the same token structure as Google Calendar to keep storage consistent.
+export type GmailToken = GoogleCalendarToken;
+
 export type AssistantState = {
   habits: HabitRecord[];
   routines: RoutineStatus[];
   googleCalendar?: GoogleCalendarToken;
+  gmail?: GmailToken;
 };
 
 type AssistantSettingsContainer = {
@@ -50,6 +54,8 @@ type AssistantSettingsContainer = {
 const defaultState: AssistantState = {
   habits: [],
   routines: [],
+  googleCalendar: undefined,
+  gmail: undefined,
 };
 
 type TypedSupabaseClient = SupabaseClient<any>;
@@ -74,6 +80,7 @@ function normalizeState(state?: AssistantState | null): AssistantState {
     habits: Array.isArray(clone.habits) ? clone.habits : [],
     routines: Array.isArray(clone.routines) ? clone.routines : [],
     googleCalendar: clone.googleCalendar,
+    gmail: clone.gmail,
   };
 }
 
@@ -132,6 +139,17 @@ export async function saveGoogleCalendarToken(
 ): Promise<void> {
   await updateAssistantState(client, userId, (draft) => {
     draft.googleCalendar = token ?? undefined;
+    return draft;
+  });
+}
+
+export async function saveGmailToken(
+  client: TypedSupabaseClient,
+  userId: string,
+  token: GmailToken | null
+): Promise<void> {
+  await updateAssistantState(client, userId, (draft) => {
+    draft.gmail = token ?? undefined;
     return draft;
   });
 }

@@ -9,6 +9,7 @@ import {
   CalendarRange,
   RefreshCw,
   Activity,
+  Mail,
 } from 'lucide-react'
 import { StringsIcon } from '@/components/icons/StringsIcon'
 
@@ -20,22 +21,24 @@ interface EmptyChatWelcomeProps {
   onRunProactiveCheckin: () => void
   onOpenHabitTracker: () => void
   onConnectCalendar: () => void
+  onConnectGmail: () => void
   className?: string
 }
 
 export default function EmptyChatWelcome({
-  onQuickPrompt, // kept for backwards-compatibility (not currently used in UI)
+  onQuickPrompt,
   onStartDriveMode,
   onRunMorningBriefing,
   onRunWeeklyReview,
   onRunProactiveCheckin,
   onOpenHabitTracker,
   onConnectCalendar,
+  onConnectGmail,
   className,
 }: EmptyChatWelcomeProps) {
-  const [hoveredCard, setHoveredCard] = useState<string | null>(null)
   const [calendarConnected, setCalendarConnected] = useState<boolean | null>(null)
   const [calendarReady, setCalendarReady] = useState<boolean | null>(null)
+  const [gmailConnected, setGmailConnected] = useState<boolean | null>(null)
 
   const refreshCalendarStatus = useCallback(async () => {
     try {
@@ -61,9 +64,34 @@ export default function EmptyChatWelcome({
     }
   }, [])
 
+  const refreshGmailStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/integrations/gmail/status', { cache: 'no-store' })
+      if (!res.ok) {
+        setGmailConnected(false)
+        return
+      }
+      const data = await res.json()
+      // Treat "connected" with missing canRead as readable by default
+      const connected = Boolean(data?.connected && (data.canRead ?? true))
+      setGmailConnected(connected)
+    } catch {
+      setGmailConnected(false)
+    }
+  }, [])
+
   useEffect(() => {
-    refreshCalendarStatus()
-  }, [refreshCalendarStatus])
+    let active = true
+    ;(async () => {
+      if (!active) return
+      await refreshCalendarStatus()
+      if (!active) return
+      await refreshGmailStatus()
+    })()
+    return () => {
+      active = false
+    }
+  }, [refreshCalendarStatus, refreshGmailStatus])
 
   const updateTiles: {
     key: string
@@ -109,6 +137,24 @@ export default function EmptyChatWelcome({
         : 'Use upcoming events in chat',
       onClick: onConnectCalendar,
     },
+    {
+      key: 'gmail',
+      icon: Mail,
+      label: gmailConnected ? 'Email (Gmail Connected)' : 'Email Inbox',
+      description: gmailConnected
+        ? 'Hear a summary of recent emails'
+        : 'Connect Gmail so Victoria can read your inbox',
+      onClick: () => {
+        if (!gmailConnected) {
+          onConnectGmail()
+          return
+        }
+        // Ask Victoria (text assistant) for a concise unread-email summary
+        onQuickPrompt(
+          'Give me a concise, voice-friendly summary of my most recent unread Gmail emails and then offer to read any one of them in full.'
+        )
+      },
+    },
   ]
 
   return (
@@ -130,26 +176,48 @@ export default function EmptyChatWelcome({
               Designed for mobile-first use. Start Drive Mode for hands-free conversations, or tap a routine to run Update
               2.0 features.
             </p>
-            {/* Calendar connection status pill */}
+            {/* Calendar & Gmail connection status pills */}
             <div className="flex justify-center">
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-semibold border ${
-                calendarConnected
-                  ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
-                  : 'bg-slate-500/15 border-slate-400/30 text-slate-300'
-              }`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${calendarConnected ? 'bg-emerald-400' : 'bg-slate-400'}`} />
-                {calendarConnected
-                  ? (calendarReady ? 'Google Calendar: Connected' : 'Google Calendar: Connected (verifying...)')
-                  : 'Google Calendar: Not connected'}
-              </span>
+              <div className="flex flex-col sm:flex-row gap-1.5 sm:gap-2">
+                <span
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-semibold border ${
+                    calendarConnected
+                      ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                      : 'bg-slate-500/15 border-slate-400/30 text-slate-300'
+                  }`}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      calendarConnected ? 'bg-emerald-400' : 'bg-slate-400'
+                    }`}
+                  />
+                  {calendarConnected
+                    ? calendarReady
+                      ? 'Google Calendar: Connected'
+                      : 'Google Calendar: Connected (verifying...)'
+                    : 'Google Calendar: Not connected'}
+                </span>
+                <span
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-semibold border ${
+                    gmailConnected
+                      ? 'bg-sky-500/20 border-sky-400/40 text-sky-200'
+                      : 'bg-slate-500/15 border-slate-400/30 text-slate-300'
+                  }`}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      gmailConnected ? 'bg-sky-400' : 'bg-slate-400'
+                    }`}
+                  />
+                  {gmailConnected ? 'Gmail: Connected' : 'Gmail: Not connected'}
+                </span>
+              </div>
             </div>
           </div>
 
           {/* Primary Drive Mode call-to-action */}
           <button
             type="button"
-            onMouseEnter={() => setHoveredCard('voice')}
-            onMouseLeave={() => setHoveredCard(null)}
             onClick={onStartDriveMode}
             className="group relative cursor-pointer w-full"
           >
@@ -173,7 +241,7 @@ export default function EmptyChatWelcome({
                 </div>
               </div>
               <div className="flex flex-col items-end gap-2">
-                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-violet-500/20 border border-violet-400/40 text-[11px] sm:text-xs font-semibold text-violet-100">
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-violet-500/20 border border-violet-400/40 text-[15px] sm:text-lg font-semibold text-violet-600">
                   Tap to start
                   <ArrowRight className="w-3 h-3" />
                 </span>

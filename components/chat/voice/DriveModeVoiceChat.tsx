@@ -6,7 +6,7 @@ import { useDriveModeSettings } from './useDriveModeSettings';
 import { getPrePromptById, getDefaultPrePrompt } from '@/components/data/prePrompts';
 import { MemoryService } from '@/lib/memoryService';
 import { storageService } from '@/lib/storageService';
-import type { ChatMessage, ConversationSummary, AssistantRoutineType } from '@/lib/types';
+import type { ChatMessage, AssistantRoutineType, EmailSummary, EmailDetail } from '@/lib/types';
 
 // Module-scoped lock to avoid duplicate realtime sessions (e.g., StrictMode effects)
 let __driveModeRealtimeLock = false;
@@ -201,7 +201,7 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const wakeLockRef = useRef<unknown | null>(null);
   const audioFocusElementRef = useRef<HTMLAudioElement | null>(null); // Dummy element for audio focus
-  const [_error, setError] = useState<string | null>(null);
+  const [, setError] = useState<string | null>(null);
   const startedRef = useRef<boolean>(false);
   const sessionIdRef = useRef<number>(0);
 
@@ -222,7 +222,6 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
   
   // Conversation tracking for saving voice chats to DB
   const voiceConversationIdRef = useRef<string | null>(null);
-  const pendingUserTranscriptRef = useRef<string>(''); // Accumulate user speech
   const pendingAssistantTranscriptRef = useRef<string>(''); // Accumulate assistant speech
   const lastSavedUserMsgIdRef = useRef<string | null>(null);
   const lastSavedAssistantMsgIdRef = useRef<string | null>(null);
@@ -463,11 +462,8 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
               type SinkAudioElement = HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> };
               const sinkEl = audioEl as SinkAudioElement;
               if (typeof sinkEl.setSinkId === 'function' && settings?.audioOutputDeviceId) {
-                sinkEl
-                  .setSinkId(settings.audioOutputDeviceId)
-                  .then(() => {
-                }).catch((err: unknown) => {
-                  const msg = typeof err === 'object' && err && 'message' in (err as { message?: unknown }) ? String((err as { message?: unknown }).message) : String(err);
+                void sinkEl.setSinkId(settings.audioOutputDeviceId).catch(() => {
+                  // Non-fatal: device might have disappeared or be unsupported
                 });
               }
             } catch {}
@@ -513,14 +509,13 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
             // Get the selected pre-prompt from chat context, or use default
             let prePromptContent = '';
             try {
-              const prePrompt = selectedPrePromptId 
-                ? getPrePromptById(selectedPrePromptId) 
+              const prePrompt = selectedPrePromptId
+                ? getPrePromptById(selectedPrePromptId)
                 : getDefaultPrePrompt();
-              
               if (prePrompt) {
                 prePromptContent = convertPrePromptToVoiceInstructions(prePrompt.content);
               }
-            } catch (err) {
+            } catch {
               // Error getting pre-prompt, using default
             }
             
@@ -531,7 +526,7 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
               if (memories.length > 0) {
                 memoriesText = MemoryService.formatMemoriesForPrompt(memories);
               }
-            } catch (err) {
+            } catch {
               // Error loading memories, continuing without
             }
             
@@ -629,11 +624,14 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
             const update20Instructions = `\n\n**UPDATE 2.0 FEATURES - NEW ASSISTANT CAPABILITIES:**\nThe app has been updated with Update 2.0, which includes five powerful new features. When the user asks "what features are available", "tell me about recent updates", "explain update 2.0", "what's new in the app", "what features can I use", or similar questions, you MUST explain these features in simple, friendly, conversational terms:\n\n1. **Morning Briefing** - I can give you a personalised morning summary that includes:\n   - Your recent memories and important things I've learned about you\n   - Today's weather forecast\n   - Your upcoming calendar events (if you've connected Google Calendar)\n   - Your active habits that need attention\n   Just ask me for a "morning briefing" or say "give me my morning update" and I'll compile everything for you!\n\n2. **Habit Tracker** - I can help you track and build good habits! You can:\n   - Create habits you want to maintain (like "exercise daily" or "read for 30 minutes")\n   - I'll remind you about them and help you log when you complete them\n   - Track your streaks and progress over time\n   - Set up daily or weekly habits with custom reminder times\n   Say "show me my habits" or "help me track a habit" to get started!\n\n3. **Proactive Check-ins** - I can automatically check in with you at smart times:\n   - After important calendar events (like "How did your meeting go?")\n   - At scheduled intervals to see how you're doing\n   - I'll ask thoughtful questions to help you reflect and capture important moments\n   You can enable this in your routine settings, and I'll reach out when it makes sense!\n\n4. **Google Calendar Integration** - I can connect to your Google Calendar to:\n   - See your upcoming events and appointments\n   - Reference your schedule in our conversations\n   - Personalise check-ins based on what you have coming up\n   - Include calendar events in your morning briefings\n   Just connect your calendar once, and I'll keep it in mind for all our chats!\n\n5. **Weekly Review** - Every week, I can give you a helpful summary:\n   - What habits you've maintained well (highlights!)\n   - Areas where you might want to focus more attention\n   - A personalised summary of your week's progress\n   - Suggestions for the week ahead\n   Ask for a "weekly review" and I'll analyse your week and give you insights!\n\n**How to use Update 2.0 features:**\n- You can trigger these features by asking me directly (e.g., "give me a morning briefing", "show my habits", "weekly review")\n- In the text chat interface, there's a Routines Bar with buttons for quick access\n- Some features (like proactive check-ins) work automatically once enabled\n- All features work in both voice and text chat - just ask naturally!\n\nWhen explaining these features, be enthusiastic and helpful! Use simple language, give practical examples, and explain how they help the user in their daily life. Speak naturally as Victoria with your British charm!`;
             
             // Calendar tool usage guidance
-            const calendarToolInstructions = `\n\n**Google Calendar Tools (YOU CAN ACCESS THE USER'S CALENDAR):**\nWhen the user asks about their schedule, meetings, availability, or to \"check my calendar\", you MUST:\n1) Call calendar_status first to see if access is connected.\n2) If connected, call calendar_events to fetch upcoming items, then summarise them naturally for voice.\n3) If not connected, offer to help connect the calendar.\nNever claim you cannot access the calendar without trying the tools. Keep summaries concise and useful for driving.`
+            const calendarToolInstructions = `\n\n**Google Calendar Tools (YOU CAN ACCESS THE USER'S CALENDAR):**\nWhen the user asks about their schedule, meetings, availability, or to \"check my calendar\", you MUST:\n1) Call calendar_status first to see if access is connected.\n2) If connected, call calendar_events to fetch upcoming items, then summarise them naturally for voice.\n3) If not connected, offer to help connect the calendar.\nNever claim you cannot access the calendar without trying the tools. Keep summaries concise and useful for driving.`;
+            
+            // Gmail tool usage guidance
+            const gmailToolInstructions = `\n\n**Gmail / Inbox Tools (YOU CAN ACCESS THE USER'S EMAIL INBOX):**\nWhen the user asks about email, their inbox, or messages (for example: \"do I have new email\", \"read my latest email\", \"what's in my inbox\"), you MUST:\n1) Call gmail_status first to see if Gmail is connected.\n2) If connected, call gmail_list to fetch a short list of recent emails (by default: newest items in the INBOX, often unread).\n   - **CRITICAL**: When listing emails, you MUST read the sender name and subject line **exactly as they appear** in the tool output. Do NOT replace them with generic names like \"Team\", \"Alex\", or \"HR\", and do NOT invent subjects.\n   - You may briefly summarise the **content/body** in your own words, but sender and subject are facts and must not be changed.\n3) If the user then asks to hear a specific message, call gmail_read with the chosen message id and read the body in a concise, voice-friendly way.\n   - For very long emails, read the most important parts first and then ask if they would like you to continue.\n4) If Gmail is not connected, briefly explain that it is not connected and offer to help connect it.\n5) If the gmail tools ever return no data or an error, you must say that you could not fetch emails rather than guessing or making up plausible-sounding messages.\nNever claim you cannot access email without trying these tools first, and never invent emails that were not returned by the tools.`;
             
             const instructions = parts.length > 0
-              ? `${parts.join('\n\n')}${memoryToolInstructions}${voiceCommandInstructions}${webSearchInstructions}${conversationSearchInstructions}${codeToolsInstructions}${update20Instructions}${calendarToolInstructions}`
-              : `${languageInstruction}\n\nYou are a helpful AI assistant in a real-time voice conversation. Speak naturally, keep responses concise, and vary your phrasing to avoid repetition.${memoryToolInstructions}${voiceCommandInstructions}${webSearchInstructions}${conversationSearchInstructions}${codeToolsInstructions}${update20Instructions}${calendarToolInstructions}`;
+              ? `${parts.join('\n\n')}${memoryToolInstructions}${voiceCommandInstructions}${webSearchInstructions}${conversationSearchInstructions}${codeToolsInstructions}${update20Instructions}${calendarToolInstructions}${gmailToolInstructions}`
+              : `${languageInstruction}\n\nYou are a helpful AI assistant in a real-time voice conversation. Speak naturally, keep responses concise, and vary your phrasing to avoid repetition.${memoryToolInstructions}${voiceCommandInstructions}${webSearchInstructions}${conversationSearchInstructions}${codeToolsInstructions}${update20Instructions}${calendarToolInstructions}${gmailToolInstructions}`;
             
             // Add memory creation, protocol retrieval, web search, and calendar tools to session
             const tools = [
@@ -913,6 +911,62 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
                   },
                   required: ['id']
                 }
+              },
+              // GMAIL TOOLS
+              {
+                type: 'function',
+                name: 'gmail_status',
+                description:
+                  'Get Gmail connection status. Always call this before listing or reading emails. If not connected, briefly explain and offer to help connect.',
+                parameters: {
+                  type: 'object',
+                  properties: {},
+                  required: [],
+                },
+              },
+              {
+                type: 'function',
+                name: 'gmail_list',
+                description:
+                  'List recent Gmail messages (typically unread INBOX email) and summarise them concisely for voice. Use after gmail_status indicates connection.',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    max: {
+                      type: 'number',
+                      minimum: 1,
+                      maximum: 20,
+                      description: 'Maximum number of emails to include. Default 5.',
+                    },
+                    label: {
+                      type: 'string',
+                      description:
+                        'Optional Gmail label to filter by (e.g., "INBOX", "STARRED"). Defaults to INBOX.',
+                    },
+                    unreadOnly: {
+                      type: 'boolean',
+                      description:
+                        'When true, limit to unread messages only. Defaults to true when the user asks for new/unread email.',
+                    },
+                  },
+                  required: [],
+                },
+              },
+              {
+                type: 'function',
+                name: 'gmail_read',
+                description:
+                  'Read a specific Gmail message by id. Use after gmail_list, when the user asks to hear a particular email in full.',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    id: {
+                      type: 'string',
+                      description: 'The message id to read, taken from a previous gmail_list call.',
+                    },
+                  },
+                  required: ['id'],
+                },
               }
             ];
 
@@ -1900,7 +1954,258 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
               } catch {}
             }
           };
-
+          
+          // Handle gmail_status tool
+          const handleGmailStatus = async (callId: string) => {
+            if (processedCallIdsRef.current.has(callId)) {
+              console.log('[DriveMode] gmail_status: already processed call_id', callId);
+              return;
+            }
+            processedCallIdsRef.current.add(callId);
+            try {
+              const resp = await fetch('/api/integrations/gmail/status', { cache: 'no-store' });
+              let output = 'Gmail status is unavailable.';
+              if (resp.ok) {
+                const data = (await resp.json()) as { connected?: boolean; canRead?: boolean };
+                if (data?.connected && data?.canRead !== false) {
+                  output = 'Gmail is connected and ready for reading.';
+                } else if (data?.connected) {
+                  output =
+                    'Gmail is connected but does not have read permission. Please reconnect and grant email access.';
+                } else {
+                  output =
+                    'Gmail is not connected yet. Open the app and use the Email tile or Gmail connect button, then try again.';
+                }
+              }
+              if (dc.readyState === 'open') {
+                dc.send(
+                  JSON.stringify({
+                    type: 'conversation.item.create',
+                    item: { type: 'function_call_output', call_id: callId, output },
+                  })
+                );
+                dc.send(JSON.stringify({ type: 'response.create' }));
+              }
+            } catch (err) {
+              console.error('[DriveMode] gmail_status: error', err);
+              try {
+                if (dc.readyState === 'open') {
+                  dc.send(
+                    JSON.stringify({
+                      type: 'conversation.item.create',
+                      item: {
+                        type: 'function_call_output',
+                        call_id: callId,
+                        output: 'Error checking Gmail status.',
+                      },
+                    })
+                  );
+                  dc.send(JSON.stringify({ type: 'response.create' }));
+                }
+              } catch {}
+            }
+          };
+          
+          // Handle gmail_list tool
+          const handleGmailList = async (callId: string, input: Record<string, unknown>) => {
+            if (processedCallIdsRef.current.has(callId)) {
+              console.log('[DriveMode] gmail_list: already processed call_id', callId);
+              return;
+            }
+            processedCallIdsRef.current.add(callId);
+            try {
+              const { max, label, unreadOnly } = (input || {}) as {
+                max?: number;
+                label?: string;
+                unreadOnly?: boolean;
+              };
+              const maxRaw = max != null ? Number(max) : 5;
+              const maxResults = Number.isFinite(maxRaw) ? maxRaw : 5;
+              const boundedMax = Math.min(Math.max(maxResults, 1), 20);
+              const params = new URLSearchParams();
+              params.set('max', String(boundedMax));
+              if (label) params.set('label', String(label));
+              if (typeof unreadOnly === 'boolean') {
+                params.set('unreadOnly', unreadOnly ? 'true' : 'false');
+              }
+              const resp = await fetch(`/api/integrations/gmail/threads?${params.toString()}`, {
+                cache: 'no-store',
+              });
+              const fallbackError = 'Unable to fetch recent emails. Please try again.';
+              if (!resp.ok) {
+                let serverError: string | undefined;
+                try {
+                  const data = (await resp.json()) as { error?: string };
+                  serverError = data?.error;
+                } catch {
+                  // ignore JSON errors
+                }
+                const output = serverError || fallbackError;
+                if (dc.readyState === 'open') {
+                  dc.send(
+                    JSON.stringify({
+                      type: 'conversation.item.create',
+                      item: { type: 'function_call_output', call_id: callId, output },
+                    })
+                  );
+                  dc.send(JSON.stringify({ type: 'response.create' }));
+                }
+                return;
+              }
+              const data = (await resp.json()) as { threads?: EmailSummary[] };
+              const threads = Array.isArray(data?.threads) ? data.threads : [];
+              let output: string;
+              if (threads.length === 0) {
+                output =
+                  typeof unreadOnly === 'boolean' && unreadOnly
+                    ? 'You have no unread emails in your inbox.'
+                    : 'There are no recent emails in your inbox.';
+              } else {
+                const lines: string[] = [];
+                threads.forEach((t, idx) => {
+                  const fromHeader = t.from || '';
+                  const sender = fromHeader.split('<')[0]?.trim() || 'Someone';
+                  const subject = (t.subject || 'No subject').trim();
+                  let when = '';
+                  try {
+                    const d = new Date(t.date);
+                    if (!Number.isNaN(d.getTime())) {
+                      when = d.toLocaleString(undefined, {
+                        weekday: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      });
+                    }
+                  } catch {
+                    // ignore date parse errors
+                  }
+                  const indexLabel = `${idx + 1}.`;
+                  const whenText = when ? `${when} - ` : '';
+                  lines.push(`${indexLabel} ${whenText}${sender}: ${subject}`.trim());
+                });
+                output = `Here ${
+                  threads.length === 1 ? 'is your latest email' : `are your latest ${threads.length} emails`
+                }:\n\n${lines.join('\n')}\n\nAsk me to read any of them in full by number or subject.`;
+              }
+              if (dc.readyState === 'open') {
+                dc.send(
+                  JSON.stringify({
+                    type: 'conversation.item.create',
+                    item: { type: 'function_call_output', call_id: callId, output },
+                  })
+                );
+                dc.send(JSON.stringify({ type: 'response.create' }));
+              }
+            } catch (err) {
+              console.error('[DriveMode] gmail_list: error', err);
+              try {
+                if (dc.readyState === 'open') {
+                  dc.send(
+                    JSON.stringify({
+                      type: 'conversation.item.create',
+                      item: {
+                        type: 'function_call_output',
+                        call_id: callId,
+                        output: 'Error fetching emails from Gmail.',
+                      },
+                    })
+                  );
+                  dc.send(JSON.stringify({ type: 'response.create' }));
+                }
+              } catch {}
+            }
+          };
+          
+          // Handle gmail_read tool
+          const handleGmailRead = async (callId: string, input: Record<string, unknown>) => {
+            if (processedCallIdsRef.current.has(callId)) {
+              console.log('[DriveMode] gmail_read: already processed call_id', callId);
+              return;
+            }
+            processedCallIdsRef.current.add(callId);
+            try {
+              const { id } = (input || {}) as { id?: string };
+              if (!id) {
+                throw new Error('Email id is required.');
+              }
+              const resp = await fetch(
+                `/api/integrations/gmail/messages/${encodeURIComponent(String(id))}`,
+                { cache: 'no-store' }
+              );
+              const fallbackError = 'Unable to read that email. Please try again.';
+              if (!resp.ok) {
+                let serverError: string | undefined;
+                try {
+                  const data = (await resp.json()) as { error?: string };
+                  serverError = data?.error;
+                } catch {
+                  // ignore JSON errors
+                }
+                const output = serverError || fallbackError;
+                if (dc.readyState === 'open') {
+                  dc.send(
+                    JSON.stringify({
+                      type: 'conversation.item.create',
+                      item: { type: 'function_call_output', call_id: callId, output },
+                    })
+                  );
+                  dc.send(JSON.stringify({ type: 'response.create' }));
+                }
+                return;
+              }
+              const data = (await resp.json()) as { message?: EmailDetail };
+              const msg = data?.message;
+              if (!msg) {
+                const output = 'I could not find that email.';
+                if (dc.readyState === 'open') {
+                  dc.send(
+                    JSON.stringify({
+                      type: 'conversation.item.create',
+                      item: { type: 'function_call_output', call_id: callId, output },
+                    })
+                  );
+                  dc.send(JSON.stringify({ type: 'response.create' }));
+                }
+                return;
+              }
+              const fromHeader = msg.from || '';
+              const sender = fromHeader.split('<')[0]?.trim() || 'someone';
+              const subject = (msg.subject || 'no subject').trim();
+              const intro = `Email from ${sender}, subject "${subject}".`;
+              const body =
+                msg.bodyText && msg.bodyText.trim().length > 0
+                  ? msg.bodyText.trim()
+                  : msg.snippet || 'This email has no readable body content.';
+              const output = `${intro}\n\n${body}`;
+              if (dc.readyState === 'open') {
+                dc.send(
+                  JSON.stringify({
+                    type: 'conversation.item.create',
+                    item: { type: 'function_call_output', call_id: callId, output },
+                  })
+                );
+                dc.send(JSON.stringify({ type: 'response.create' }));
+              }
+            } catch (err) {
+              console.error('[DriveMode] gmail_read: error', err);
+              try {
+                if (dc.readyState === 'open') {
+                  dc.send(
+                    JSON.stringify({
+                      type: 'conversation.item.create',
+                      item: {
+                        type: 'function_call_output',
+                        call_id: callId,
+                        output: 'Error reading email from Gmail.',
+                      },
+                    })
+                  );
+                  dc.send(JSON.stringify({ type: 'response.create' }));
+                }
+              } catch {}
+            }
+          };
+          
           // Handle search_memories tool
           const handleMemorySearch = async (callId: string, input: Record<string, unknown>) => {
             // Prevent duplicate processing
@@ -2260,9 +2565,23 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
           
           // All supported tool names
           const SUPPORTED_TOOLS = [
-            'search_memories', 'create_memory', 'get_protocol', 'web_search', 'search_conversations',
-            'get_project_info', 'read_code_file', 'git_recent_changes', 'search_code',
-            'calendar_status', 'calendar_events', 'calendar_add_event', 'calendar_update_event', 'calendar_delete_event'
+            'search_memories',
+            'create_memory',
+            'get_protocol',
+            'web_search',
+            'search_conversations',
+            'get_project_info',
+            'read_code_file',
+            'git_recent_changes',
+            'search_code',
+            'calendar_status',
+            'calendar_events',
+            'calendar_add_event',
+            'calendar_update_event',
+            'calendar_delete_event',
+            'gmail_status',
+            'gmail_list',
+            'gmail_read',
           ];
           
           // Helper to handle tool calls based on name
@@ -2307,8 +2626,26 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
               console.log('[DriveMode] calendar_update_event tool call detected', { callId: toolCall.callId, arguments: toolCall.arguments });
               handleCalendarUpdateEvent(toolCall.callId, toolCall.arguments);
             } else if (toolCall.name === 'calendar_delete_event') {
-              console.log('[DriveMode] calendar_delete_event tool call detected', { callId: toolCall.callId, arguments: toolCall.arguments });
+              console.log('[DriveMode] calendar_delete_event tool call detected', {
+                callId: toolCall.callId,
+                arguments: toolCall.arguments,
+              });
               handleCalendarDeleteEvent(toolCall.callId, toolCall.arguments);
+            } else if (toolCall.name === 'gmail_status') {
+              console.log('[DriveMode] gmail_status tool call detected', { callId: toolCall.callId });
+              handleGmailStatus(toolCall.callId);
+            } else if (toolCall.name === 'gmail_list') {
+              console.log('[DriveMode] gmail_list tool call detected', {
+                callId: toolCall.callId,
+                arguments: toolCall.arguments,
+              });
+              handleGmailList(toolCall.callId, toolCall.arguments);
+            } else if (toolCall.name === 'gmail_read') {
+              console.log('[DriveMode] gmail_read tool call detected', {
+                callId: toolCall.callId,
+                arguments: toolCall.arguments,
+              });
+              handleGmailRead(toolCall.callId, toolCall.arguments);
             }
           };
           

@@ -426,6 +426,24 @@ export function ChatInterface() {
     }
   }, []);
 
+  const handleConnectGmail = useCallback(async () => {
+    try {
+      const res = await fetch('/api/integrations/gmail/auth-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ redirectTo: '/' }),
+      });
+      if (!res.ok) throw new Error('Failed to initiate Gmail OAuth');
+      const data = await res.json();
+      if (data?.url) {
+        window.location.href = data.url;
+      }
+    } catch (error) {
+      console.error('[ChatInterface] connectGmail error', error);
+      toast.error('Gmail connection failed', { description: 'Please try again in a moment.' });
+    }
+  }, []);
+
   const handleQuickPrompt = useCallback((text: string) => {
     if (!text) return;
     // Route quick prompts to the Tutorial Agent with vector search context
@@ -809,6 +827,7 @@ export function ChatInterface() {
                   onRunProactiveCheckin={handleProactiveCheckinRun}
                   onOpenHabitTracker={handleOpenHabitTracker}
                   onConnectCalendar={handleConnectCalendar}
+                  onConnectGmail={handleConnectGmail}
                 />
               </div>
             )}
