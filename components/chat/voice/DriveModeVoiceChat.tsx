@@ -219,6 +219,7 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
   const pendingToolResultsRef = useRef<Map<string, { callId: string; result: string; responseId?: string }>>(new Map());
   const callIdToItemIdRef = useRef<Map<string, string>>(new Map()); // Track item_id for tool results to enable updates
   const placeholderSentRef = useRef<Set<string>>(new Set<string>()); // Track which call_ids have placeholders sent
+  const lastGmailThreadsRef = useRef<EmailSummary[] | null>(null); // Cache last listed Gmail threads for index-based reads
   
   // Conversation tracking for saving voice chats to DB
   const voiceConversationIdRef = useRef<string | null>(null);
@@ -627,7 +628,7 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
             const calendarToolInstructions = `\n\n**Google Calendar Tools (YOU CAN ACCESS THE USER'S CALENDAR):**\nWhen the user asks about their schedule, meetings, availability, or to \"check my calendar\", you MUST:\n1) Call calendar_status first to see if access is connected.\n2) If connected, call calendar_events to fetch upcoming items, then summarise them naturally for voice.\n3) If not connected, offer to help connect the calendar.\nNever claim you cannot access the calendar without trying the tools. Keep summaries concise and useful for driving.`;
             
             // Gmail tool usage guidance
-            const gmailToolInstructions = `\n\n**Gmail / Inbox Tools (YOU CAN ACCESS THE USER'S EMAIL INBOX):**\nWhen the user asks about email, their inbox, or messages (for example: \"do I have new email\", \"read my latest email\", \"what's in my inbox\"), you MUST:\n1) Call gmail_status first to see if Gmail is connected.\n2) If connected, call gmail_list to fetch a short list of recent emails (by default: newest items in the INBOX, often unread).\n   - **CRITICAL**: When listing emails, you MUST read the sender name and subject line **exactly as they appear** in the tool output. Do NOT replace them with generic names like \"Team\", \"Alex\", or \"HR\", and do NOT invent subjects.\n   - You may briefly summarise the **content/body** in your own words, but sender and subject are facts and must not be changed.\n3) If the user then asks to hear a specific message, call gmail_read with the chosen message id and read the body in a concise, voice-friendly way.\n   - For very long emails, read the most important parts first and then ask if they would like you to continue.\n4) If Gmail is not connected, briefly explain that it is not connected and offer to help connect it.\n5) If the gmail tools ever return no data or an error, you must say that you could not fetch emails rather than guessing or making up plausible-sounding messages.\nNever claim you cannot access email without trying these tools first, and never invent emails that were not returned by the tools.`;
+            const gmailToolInstructions = `\n\n**Gmail / Inbox Tools (YOU CAN ACCESS THE USER'S EMAIL INBOX):**\nWhen the user asks about email, their inbox, or messages (for example: \"do I have new email\", \"read my latest email\", \"what's in my inbox\"), you MUST:\n1) Call gmail_status first to see if Gmail is connected.\n2) If connected, call gmail_list to fetch a short list of recent emails (by default: newest items in the INBOX, often unread).\n   - **CRITICAL**: When listing emails, you MUST read the sender name and subject line **exactly as they appear** in the tool output. Do NOT replace them with generic names like \"Team\", \"Alex\", or \"HR\", and do NOT invent subjects.\n   - You may briefly summarise the **content/body** in your own words, but sender and subject are facts and must not be changed.\n3) If the user then asks to hear a specific message, call gmail_read using either:\n   - the exact Gmail message id from the tool output, OR\n   - the 1-based index of that email in the last gmail_list result (index: 1 for the first email, 2 for the second, etc.), when the user says things like \"read the first one\".\n   Read the body in a concise, voice-friendly way.\n   - For very long emails, read the most important parts first and then ask if they would like you to continue.\n4) If Gmail is not connected, briefly explain that it is not connected and offer to help connect it.\n5) If the gmail tools ever return no data or an error, you must say that you could not fetch emails rather than guessing or making up plausible-sounding messages.\nNever claim you cannot access email without trying these tools first, and never invent emails that were not returned by the tools.`;
             
             const instructions = parts.length > 0
               ? `${parts.join('\n\n')}${memoryToolInstructions}${voiceCommandInstructions}${webSearchInstructions}${conversationSearchInstructions}${codeToolsInstructions}${update20Instructions}${calendarToolInstructions}${gmailToolInstructions}`
@@ -956,16 +957,22 @@ export function DriveModeVoiceChat({ model, voice, onStatus, onEnded, onModelAct
                 type: 'function',
                 name: 'gmail_read',
                 description:
-                  'Read a specific Gmail message by id. Use after gmail_list, when the user asks to hear a particular email in full.',
+                  'Read a specific Gmail message by id or by index from the most recent gmail_list. Use after gmail_list, when the user asks to hear a particular email in full.',
                 parameters: {
                   type: 'object',
                   properties: {
                     id: {
                       type: 'string',
-                      description: 'The message id to read, taken from a previous gmail_list call.',
+                      description:
+                        'The Gmail message id to read, taken from a previous gmail_list call. If unsure, prefer using the index field instead.',
+                    },
+                    index: {
+                      type: 'number',
+                      description:
+                        'Optional 1-based index of the email in the most recent gmail_list result (1 for the first email, 2 for the second, etc.). Use this when the user says things like "read the first one" or "read email number three".',
                     },
                   },
-                  required: ['id'],
+                  required: [],
                 },
               }
             ];
@@ -2054,6 +2061,7 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
               }
               const data = (await resp.json()) as { threads?: EmailSummary[] };
               const threads = Array.isArray(data?.threads) ? data.threads : [];
+              lastGmailThreadsRef.current = threads;
               let output: string;
               if (threads.length === 0) {
                 output =
@@ -2124,12 +2132,40 @@ body: JSON.stringify({ query, maxResults, searchType: searchInput.searchType || 
             }
             processedCallIdsRef.current.add(callId);
             try {
-              const { id } = (input || {}) as { id?: string };
-              if (!id) {
-                throw new Error('Email id is required.');
+              const { id, index } = (input || {}) as { id?: string; index?: number };
+              let messageId: string | null = null;
+
+              // 1) If a non-numeric id is provided, treat it as a Gmail message id directly.
+              if (typeof id === 'string' && id.trim()) {
+                if (!/^\d+$/.test(id.trim())) {
+                  messageId = id.trim();
+                } else {
+                  // 2) Numeric id → treat as 1-based index into the last gmail_list result.
+                  const idx = Number(id.trim()) - 1;
+                  const threads = lastGmailThreadsRef.current;
+                  if (threads && idx >= 0 && idx < threads.length) {
+                    messageId = threads[idx].id;
+                  }
+                }
               }
+
+              // 3) If explicit index is provided, prefer that when we have a cached list.
+              if (!messageId && typeof index === 'number' && Number.isFinite(index)) {
+                const idx = Math.round(index) - 1;
+                const threads = lastGmailThreadsRef.current;
+                if (threads && idx >= 0 && idx < threads.length) {
+                  messageId = threads[idx].id;
+                }
+              }
+
+              if (!messageId) {
+                throw new Error(
+                  'A valid email id or index from the most recent email list is required to read a message.'
+                );
+              }
+
               const resp = await fetch(
-                `/api/integrations/gmail/messages/${encodeURIComponent(String(id))}`,
+                `/api/integrations/gmail/messages/${encodeURIComponent(String(messageId))}`,
                 { cache: 'no-store' }
               );
               const fallbackError = 'Unable to read that email. Please try again.';
