@@ -17,6 +17,35 @@ import { formatCurrency } from '@/lib/financeUtils'
 import { toast } from 'sonner'
 import FinanceImportDialog from './FinanceImportDialog'
 
+// New filter/sort system imports
+import type {
+  ColumnField,
+  ColumnFilter,
+  FilterState,
+  SortState,
+  SortDirection,
+  ColumnConfig,
+} from '@/types/finance/filterTypes'
+import {
+  createEmptyFilterState,
+  createEmptySortState,
+  createStaticColumnConfig,
+  createAccountColumnConfig,
+} from '@/types/finance/filterTypes'
+import {
+  applyAllFilters,
+  setColumnFilter,
+  clearColumnFilter,
+  getActiveFilterCount,
+} from '@/lib/finance/filterUtils'
+import {
+  applyCascadingSort,
+  addSortRule,
+  removeSortRule,
+  getSortRule,
+} from '@/lib/finance/sortUtils'
+import TableHeaderFilterSort from '@/components/finance/TableHeaderFilterSort'
+
 interface HistoricalSpendTrackingTabProps {
   initialProjections?: FinanceProjection[]
 }
@@ -25,9 +54,6 @@ interface AccountInfo {
   id: string
   name: string
 }
-
-type SortField = 'date' | 'time' | 'days_remaining' | 'total' | 'bills_remaining' | 'cash_available' | 'cash_per_week' | 'spending_per_day'
-type SortDirection = 'asc' | 'desc'
 
 interface GroupedProjection {
   yearMonth: string
@@ -38,7 +64,8 @@ interface GroupedProjection {
 
 /**
  * Historical Spend Tracking Tab Component
- * Displays all historical projections in table format with filtering, sorting, and date grouping
+ * Displays all historical projections in table format with Excel-style filtering, 
+ * cascading sorting, and date grouping.
  */
 export default function HistoricalSpendTrackingTab({ 
   initialProjections = [] 
@@ -46,6 +73,9 @@ export default function HistoricalSpendTrackingTab({
   const [projections, setProjections] = useState<FinanceProjection[]>(initialProjections)
   const [accounts, setAccounts] = useState<FinanceAccount[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
+  
+  // Legacy filter state (kept for backward compatibility)
   const [searchTerm, setSearchTerm] = useState('')
   const [dateFilter, setDateFilter] = useState<'all' | 'last12' | 'last6' | 'last3' | 'custom'>('all')
   const [customDateStart, setCustomDateStart] = useState('')
@@ -54,9 +84,10 @@ export default function HistoricalSpendTrackingTab({
   const [minAmount, setMinAmount] = useState('')
   const [maxAmount, setMaxAmount] = useState('')
   const [selectedAccounts, setSelectedAccounts] = useState<Set<string>>(new Set())
-  const [sortField, setSortField] = useState<SortField>('date')
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
-  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
+  
+  // New filter/sort state
+  const [columnFilters, setColumnFilters] = useState<FilterState>(() => createEmptyFilterState())
+  const [sortState, setSortState] = useState<SortState>(() => createEmptySortState())
 
   // Extract unique accounts from all historical projections
   const uniqueAccounts = useMemo<AccountInfo[]>(() => {
@@ -65,18 +96,42 @@ export default function HistoricalSpendTrackingTab({
     projections.forEach(projection => {
       Object.keys(projection.account_balances || {}).forEach(accountId => {
         if (!accountMap.has(accountId)) {
-          // Try to find account name from current accounts, fall back to ID
           const account = accounts.find(a => a.id === accountId)
           accountMap.set(accountId, account?.name || accountId)
         }
       })
     })
     
-    // Convert to array and sort by name for better UX
     return Array.from(accountMap.entries())
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [projections, accounts])
+
+  // Build column configurations
+  const columnConfigs = useMemo<ColumnConfig[]>(() => {
+    const staticColumns: ColumnConfig[] = [
+      createStaticColumnConfig('date'),
+      createStaticColumnConfig('year'),
+      createStaticColumnConfig('time'),
+      createStaticColumnConfig('days_remaining'),
+    ]
+    
+    // Add account columns
+    const accountColumns = uniqueAccounts.map(acc => 
+      createAccountColumnConfig(acc.id, acc.name)
+    )
+    
+    const summaryColumns: ColumnConfig[] = [
+      createStaticColumnConfig('total'),
+      createStaticColumnConfig('bills_remaining'),
+      createStaticColumnConfig('cash_available'),
+      createStaticColumnConfig('cash_per_week'),
+      createStaticColumnConfig('spending_per_day'),
+      createStaticColumnConfig('notes'),
+    ]
+    
+    return [...staticColumns, ...accountColumns, ...summaryColumns]
+  }, [uniqueAccounts])
 
   // Load all historical projections and accounts
   const loadData = useCallback(async () => {
@@ -111,7 +166,6 @@ export default function HistoricalSpendTrackingTab({
     if (initialProjections.length === 0) {
       loadData()
     } else {
-      // Still load accounts to get proper names
       getAccounts().then(result => {
         if (result.data) {
           setAccounts(result.data)
@@ -127,11 +181,11 @@ export default function HistoricalSpendTrackingTab({
       const year = new Date(p.projection_date).getFullYear()
       years.add(year)
     })
-    return Array.from(years).sort((a, b) => b - a) // Descending order
+    return Array.from(years).sort((a, b) => b - a)
   }, [projections])
 
-  // Filter and sort projections
-  const filteredAndSortedProjections = useMemo(() => {
+  // Apply legacy filters (year, date range, amount, accounts, search)
+  const legacyFilteredProjections = useMemo(() => {
     let filtered = [...projections]
 
     // Apply year filter
@@ -148,23 +202,20 @@ export default function HistoricalSpendTrackingTab({
     // Apply date filter
     if (dateFilter !== 'all') {
       const now = new Date()
-      let cutoffDate: Date
       
       if (dateFilter === 'custom') {
         if (customDateStart && customDateEnd) {
           const start = new Date(customDateStart)
           const end = new Date(customDateEnd)
-          end.setHours(23, 59, 59, 999) // Include entire end date
+          end.setHours(23, 59, 59, 999)
           filtered = filtered.filter(p => {
             const projDate = new Date(p.projection_date)
             return projDate >= start && projDate <= end
           })
-        } else {
-          return filtered // If custom dates not set, show all
         }
       } else {
         const monthsAgo = dateFilter === 'last12' ? 12 : dateFilter === 'last6' ? 6 : 3
-        cutoffDate = new Date(now.getFullYear(), now.getMonth() - monthsAgo, 1)
+        const cutoffDate = new Date(now.getFullYear(), now.getMonth() - monthsAgo, 1)
         filtered = filtered.filter(p => new Date(p.projection_date) >= cutoffDate)
       }
     }
@@ -188,12 +239,12 @@ export default function HistoricalSpendTrackingTab({
       filtered = filtered.filter(p => {
         return Array.from(selectedAccounts).some(accountId => {
           const balance = p.account_balances[accountId] || 0
-          return balance !== 0 // Has non-zero balance in selected account
+          return balance !== 0
         })
       })
     }
 
-    // Apply search filter (search in notes, date, or amounts)
+    // Apply search filter
     if (searchTerm) {
       const searchLower = searchTerm.toLowerCase()
       filtered = filtered.filter(p => 
@@ -205,50 +256,29 @@ export default function HistoricalSpendTrackingTab({
       )
     }
 
-    // Apply sorting
-    filtered.sort((a, b) => {
-      let comparison = 0
-      
-      switch (sortField) {
-        case 'date':
-          comparison = new Date(a.projection_date).getTime() - new Date(b.projection_date).getTime()
-          break
-        case 'time':
-          const timeA = a.entry_time || '00:00:00'
-          const timeB = b.entry_time || '00:00:00'
-          comparison = timeA.localeCompare(timeB)
-          break
-        case 'days_remaining':
-          comparison = a.days_remaining - b.days_remaining
-          break
-        case 'total':
-          comparison = a.total_available - b.total_available
-          break
-        case 'bills_remaining':
-          comparison = a.bills_remaining - b.bills_remaining
-          break
-        case 'cash_available':
-          comparison = a.cash_available - b.cash_available
-          break
-        case 'cash_per_week':
-          const cashPerWeekA = a.cash_per_week || 0
-          const cashPerWeekB = b.cash_per_week || 0
-          comparison = cashPerWeekA - cashPerWeekB
-          break
-        case 'spending_per_day':
-          const spendingPerDayA = a.spending_per_day || 0
-          const spendingPerDayB = b.spending_per_day || 0
-          comparison = spendingPerDayA - spendingPerDayB
-          break
-        default:
-          return 0
-      }
-      
-      return sortDirection === 'asc' ? comparison : -comparison
-    })
-
     return filtered
-  }, [projections, yearFilter, dateFilter, customDateStart, customDateEnd, minAmount, maxAmount, selectedAccounts, searchTerm, sortField, sortDirection])
+  }, [projections, yearFilter, dateFilter, customDateStart, customDateEnd, minAmount, maxAmount, selectedAccounts, searchTerm])
+
+  // Apply column filters and sorting
+  const filteredAndSortedProjections = useMemo(() => {
+    // First apply legacy filters
+    let result = legacyFilteredProjections
+    
+    // Then apply column filters
+    result = applyAllFilters(result, columnFilters)
+    
+    // Finally apply cascading sort
+    if (sortState.length > 0) {
+      result = applyCascadingSort(result, sortState)
+    } else {
+      // Default sort by date descending if no sort rules
+      result = [...result].sort((a, b) => 
+        new Date(b.projection_date).getTime() - new Date(a.projection_date).getTime()
+      )
+    }
+    
+    return result
+  }, [legacyFilteredProjections, columnFilters, sortState])
 
   // Group projections by year/month
   const groupedProjections = useMemo<GroupedProjection[]>(() => {
@@ -261,23 +291,103 @@ export default function HistoricalSpendTrackingTab({
       const yearMonth = `${year}-${String(month).padStart(2, '0')}`
       
       if (!groups.has(yearMonth)) {
-        groups.set(yearMonth, {
-          yearMonth,
-          year,
-          month,
-          projections: []
-        })
+        groups.set(yearMonth, { yearMonth, year, month, projections: [] })
       }
-      
       groups.get(yearMonth)!.projections.push(projection)
     })
     
-    // Convert to array and sort by year/month descending (newest first)
     return Array.from(groups.values()).sort((a, b) => {
       if (a.year !== b.year) return b.year - a.year
       return b.month - a.month
     })
   }, [filteredAndSortedProjections])
+
+  // Calculate summary statistics for filtered projections
+  const summaryStats = useMemo(() => {
+    const count = filteredAndSortedProjections.length
+    if (count === 0) {
+      return null
+    }
+
+    // Helper to calculate stats for a numeric array
+    const calcStats = (values: number[]) => {
+      if (values.length === 0) return { sum: 0, avg: 0, min: 0, max: 0 }
+      const sum = values.reduce((a, b) => a + b, 0)
+      const avg = sum / values.length
+      const min = Math.min(...values)
+      const max = Math.max(...values)
+      return { sum, avg, min, max }
+    }
+
+    // Extract values for each column
+    const daysRemainingValues = filteredAndSortedProjections.map(p => p.days_remaining)
+    const totalValues = filteredAndSortedProjections.map(p => 
+      Object.values(p.account_balances || {}).reduce((sum, val) => sum + val, 0)
+    )
+    const billsRemainingValues = filteredAndSortedProjections.map(p => p.bills_remaining)
+    const cashAvailableValues = filteredAndSortedProjections.map(p => p.cash_available)
+    const cashPerWeekValues = filteredAndSortedProjections
+      .map(p => {
+        const weeksRemaining = p.days_remaining > 0 ? p.days_remaining / 7 : 0
+        return weeksRemaining > 0 ? (p.cash_per_week ?? p.cash_available / weeksRemaining) : 0
+      })
+      .filter(v => v > 0)
+    const spendingPerDayValues = filteredAndSortedProjections
+      .map(p => {
+        return p.days_remaining > 0 ? (p.spending_per_day ?? p.cash_available / p.days_remaining) : 0
+      })
+      .filter(v => v > 0)
+
+    // Calculate stats for account columns
+    const accountStats: Record<string, { sum: number; avg: number; min: number; max: number }> = {}
+    uniqueAccounts.forEach(account => {
+      const values = filteredAndSortedProjections.map(p => p.account_balances[account.id] || 0)
+      accountStats[account.id] = calcStats(values)
+    })
+
+    // Calculate derived column stats
+    const leftOver450Values = filteredAndSortedProjections.map(p => {
+      const weeksRemaining = p.days_remaining > 0 ? p.days_remaining / 7 : 0
+      return p.cash_available - (450 * weeksRemaining)
+    })
+    const minNeededValues = filteredAndSortedProjections.map(p => {
+      const weeksRemaining = p.days_remaining > 0 ? p.days_remaining / 7 : 0
+      return p.bills_remaining + (450 * weeksRemaining)
+    })
+
+    return {
+      count,
+      daysRemaining: calcStats(daysRemainingValues),
+      total: calcStats(totalValues),
+      billsRemaining: calcStats(billsRemainingValues),
+      cashAvailable: calcStats(cashAvailableValues),
+      cashPerWeek: calcStats(cashPerWeekValues),
+      spendingPerDay: calcStats(spendingPerDayValues),
+      accounts: accountStats,
+      leftOver450: calcStats(leftOver450Values),
+      minNeeded: calcStats(minNeededValues),
+    }
+  }, [filteredAndSortedProjections, uniqueAccounts])
+
+  // Handle column filter change
+  const handleFilterChange = useCallback((field: ColumnField, filter: ColumnFilter | null) => {
+    setColumnFilters(prev => {
+      if (filter === null) {
+        return clearColumnFilter(prev, field)
+      }
+      return setColumnFilter(prev, field, filter)
+    })
+  }, [])
+
+  // Handle column sort change
+  const handleSortChange = useCallback((field: ColumnField, direction: SortDirection | null) => {
+    setSortState(prev => {
+      if (direction === null) {
+        return removeSortRule(prev, field)
+      }
+      return addSortRule(prev, field, direction)
+    })
+  }, [])
 
   // Handle delete projection
   const handleDelete = useCallback(async (id: string) => {
@@ -294,7 +404,7 @@ export default function HistoricalSpendTrackingTab({
     }
   }, [])
 
-  // Toggle account filter
+  // Toggle account filter (legacy)
   const toggleAccountFilter = useCallback((accountId: string) => {
     setSelectedAccounts(prev => {
       const next = new Set(prev)
@@ -306,16 +416,6 @@ export default function HistoricalSpendTrackingTab({
       return next
     })
   }, [])
-
-  // Handle sort column click
-  const handleSort = useCallback((field: SortField) => {
-    if (sortField === field) {
-      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortField(field)
-      setSortDirection('desc')
-    }
-  }, [sortField])
 
   // Format date for display
   const formatDate = useCallback((dateString: string) => {
@@ -346,20 +446,11 @@ export default function HistoricalSpendTrackingTab({
     const minAmountNeeded = projection.bills_remaining + (450 * weeksRemaining)
     const spendingPerDay = projection.days_remaining > 0 ? (projection.spending_per_day || cashAvailable / projection.days_remaining) : 0
     
-    return {
-      total,
-      cashAvailable,
-      weeksRemaining,
-      cashPerWeek,
-      leftOver450PerWeek,
-      minAmountNeeded,
-      spendingPerDay
-    }
+    return { total, cashAvailable, weeksRemaining, cashPerWeek, leftOver450PerWeek, minAmountNeeded, spendingPerDay }
   }, [])
 
   // Handle import completion
   const handleImportComplete = useCallback(async () => {
-    // Reload projections after import
     setIsLoading(true)
     try {
       const result = await getAllProjections()
@@ -374,6 +465,14 @@ export default function HistoricalSpendTrackingTab({
       setIsLoading(false)
     }
   }, [])
+
+  // Get active filter count for display
+  const activeColumnFilterCount = getActiveFilterCount(columnFilters)
+
+  // Helper to get column config by field
+  const getColumnConfig = useCallback((field: ColumnField): ColumnConfig | undefined => {
+    return columnConfigs.find(c => c.field === field)
+  }, [columnConfigs])
 
   return (
     <div className="space-y-4 h-full flex flex-col">
@@ -410,7 +509,14 @@ export default function HistoricalSpendTrackingTab({
       {/* Filters and Search */}
       <Card className="glass-large">
         <CardHeader className="py-2">
-          <CardTitle className="glass-text-primary text-sm font-semibold">Filters</CardTitle>
+          <CardTitle className="glass-text-primary text-sm font-semibold flex items-center gap-2">
+            Filters
+            {activeColumnFilterCount > 0 && (
+              <span className="text-xs bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded">
+                {activeColumnFilterCount} column filter{activeColumnFilterCount > 1 ? 's' : ''} active
+              </span>
+            )}
+          </CardTitle>
         </CardHeader>
         <CardContent className="py-2 space-y-3">
           {/* Search */}
@@ -514,34 +620,31 @@ export default function HistoricalSpendTrackingTab({
             </div>
           )}
 
-          {/* Sort Controls */}
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Select value={sortField} onValueChange={(v) => setSortField(v as SortField)}>
-              <SelectTrigger className="w-full sm:w-[180px] glass-small">
-                <SelectValue placeholder="Sort by" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="date">Date</SelectItem>
-                <SelectItem value="time">Time</SelectItem>
-                <SelectItem value="days_remaining">Days Remaining</SelectItem>
-                <SelectItem value="total">Total Available</SelectItem>
-                <SelectItem value="bills_remaining">Bills Remaining</SelectItem>
-                <SelectItem value="cash_available">Cash Available</SelectItem>
-                <SelectItem value="cash_per_week">Cash per Week</SelectItem>
-                <SelectItem value="spending_per_day">Spending per Day</SelectItem>
-              </SelectContent>
-            </Select>
-            
-            <Select value={sortDirection} onValueChange={(v) => setSortDirection(v as SortDirection)}>
-              <SelectTrigger className="w-full sm:w-[120px] glass-small">
-                <SelectValue placeholder="Direction" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="asc">Ascending</SelectItem>
-                <SelectItem value="desc">Descending</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Clear All Filters Button */}
+          {(activeColumnFilterCount > 0 || sortState.length > 0) && (
+            <div className="flex gap-2 pt-2 border-t border-white/10">
+              {activeColumnFilterCount > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setColumnFilters(createEmptyFilterState())}
+                  className="text-xs text-amber-400 hover:text-amber-300"
+                >
+                  Clear Column Filters
+                </Button>
+              )}
+              {sortState.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSortState(createEmptySortState())}
+                  className="text-xs text-blue-400 hover:text-blue-300"
+                >
+                  Clear All Sorts ({sortState.length})
+                </Button>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -550,6 +653,11 @@ export default function HistoricalSpendTrackingTab({
         <p className="glass-text-secondary text-sm">
           Showing <span className="glass-text-primary font-semibold">{filteredAndSortedProjections.length}</span> of{' '}
           <span className="glass-text-primary font-semibold">{projections.length}</span> projections
+          {sortState.length > 0 && (
+            <span className="ml-2 text-blue-400">
+              • Sorted by {sortState.length} column{sortState.length > 1 ? 's' : ''}
+            </span>
+          )}
         </p>
       </div>
 
@@ -579,109 +687,162 @@ export default function HistoricalSpendTrackingTab({
                   <table className="w-full text-xs min-w-[800px]">
                   <thead>
                     <tr className="border-b border-white/10 dark:border-white/10">
+                      {/* Date - Sticky */}
                       <th className="text-center py-1 px-1.5 glass-text-secondary text-xs font-medium sticky left-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-10 border-r border-white/10 dark:border-white/10">
-                        <button
-                          onClick={() => handleSort('date')}
-                          className="hover:bg-white/20 dark:hover:bg-white/10 px-1 py-0.5 rounded transition-colors"
-                        >
-                          Date
-                          {sortField === 'date' && (
-                            <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                          )}
-                        </button>
+                        {getColumnConfig('date') && (
+                          <TableHeaderFilterSort
+                            column={getColumnConfig('date')!}
+                            projections={legacyFilteredProjections}
+                            currentFilter={columnFilters.get('date') ?? null}
+                            currentSort={getSortRule(sortState, 'date')}
+                            onFilterChange={handleFilterChange}
+                            onSortChange={handleSortChange}
+                          />
+                        )}
                       </th>
+                      {/* Year */}
                       <th className="text-center py-1 px-1.5 glass-text-secondary text-xs font-medium">
-                        Year
+                        {getColumnConfig('year') && (
+                          <TableHeaderFilterSort
+                            column={getColumnConfig('year')!}
+                            projections={legacyFilteredProjections}
+                            currentFilter={columnFilters.get('year') ?? null}
+                            currentSort={getSortRule(sortState, 'year')}
+                            onFilterChange={handleFilterChange}
+                            onSortChange={handleSortChange}
+                          />
+                        )}
                       </th>
+                      {/* Time */}
                       <th className="text-center py-1 px-1.5 glass-text-secondary text-xs font-medium">
-                        <button
-                          onClick={() => handleSort('time')}
-                          className="hover:bg-white/20 dark:hover:bg-white/10 px-1 py-0.5 rounded transition-colors"
-                        >
-                          Time
-                          {sortField === 'time' && (
-                            <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                          )}
-                        </button>
+                        {getColumnConfig('time') && (
+                          <TableHeaderFilterSort
+                            column={getColumnConfig('time')!}
+                            projections={legacyFilteredProjections}
+                            currentFilter={columnFilters.get('time') ?? null}
+                            currentSort={getSortRule(sortState, 'time')}
+                            onFilterChange={handleFilterChange}
+                            onSortChange={handleSortChange}
+                          />
+                        )}
                       </th>
+                      {/* Days Remaining */}
                       <th className="text-center py-1 px-1.5 glass-text-secondary text-xs font-medium">
-                        <button
-                          onClick={() => handleSort('days_remaining')}
-                          className="hover:bg-white/20 dark:hover:bg-white/10 px-1 py-0.5 rounded transition-colors"
-                        >
-                          Days Remaining
-                          {sortField === 'days_remaining' && (
-                            <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                          )}
-                        </button>
+                        {getColumnConfig('days_remaining') && (
+                          <TableHeaderFilterSort
+                            column={getColumnConfig('days_remaining')!}
+                            projections={legacyFilteredProjections}
+                            currentFilter={columnFilters.get('days_remaining') ?? null}
+                            currentSort={getSortRule(sortState, 'days_remaining')}
+                            onFilterChange={handleFilterChange}
+                            onSortChange={handleSortChange}
+                          />
+                        )}
                       </th>
-                      {uniqueAccounts.map(account => (
-                        <th key={account.id} className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium">
-                          {account.name}
-                        </th>
-                      ))}
+                      {/* Account Columns */}
+                      {uniqueAccounts.map(account => {
+                        const field = `account_${account.id}` as ColumnField
+                        const config = getColumnConfig(field)
+                        return (
+                          <th key={account.id} className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium">
+                            {config ? (
+                              <TableHeaderFilterSort
+                                column={config}
+                                projections={legacyFilteredProjections}
+                                currentFilter={columnFilters.get(field) ?? null}
+                                currentSort={getSortRule(sortState, field)}
+                                onFilterChange={handleFilterChange}
+                                onSortChange={handleSortChange}
+                              />
+                            ) : account.name}
+                          </th>
+                        )
+                      })}
+                      {/* Total */}
                       <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium bg-white/15 dark:bg-white/10">
-                        <button
-                          onClick={() => handleSort('total')}
-                          className="hover:bg-white/30 dark:hover:bg-white/15 px-1 py-0.5 rounded transition-colors"
-                        >
-                          Total
-                          {sortField === 'total' && (
-                            <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                          )}
-                        </button>
+                        {getColumnConfig('total') && (
+                          <TableHeaderFilterSort
+                            column={getColumnConfig('total')!}
+                            projections={legacyFilteredProjections}
+                            currentFilter={columnFilters.get('total') ?? null}
+                            currentSort={getSortRule(sortState, 'total')}
+                            onFilterChange={handleFilterChange}
+                            onSortChange={handleSortChange}
+                          />
+                        )}
                       </th>
+                      {/* Bills Remaining */}
                       <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium bg-white/15 dark:bg-white/10">
-                        <button
-                          onClick={() => handleSort('bills_remaining')}
-                          className="hover:bg-white/30 dark:hover:bg-white/15 px-1 py-0.5 rounded transition-colors"
-                        >
-                          Bills Remaining
-                          {sortField === 'bills_remaining' && (
-                            <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                          )}
-                        </button>
+                        {getColumnConfig('bills_remaining') && (
+                          <TableHeaderFilterSort
+                            column={getColumnConfig('bills_remaining')!}
+                            projections={legacyFilteredProjections}
+                            currentFilter={columnFilters.get('bills_remaining') ?? null}
+                            currentSort={getSortRule(sortState, 'bills_remaining')}
+                            onFilterChange={handleFilterChange}
+                            onSortChange={handleSortChange}
+                          />
+                        )}
                       </th>
+                      {/* Cash Available */}
                       <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium bg-white/15 dark:bg-white/10">
-                        <button
-                          onClick={() => handleSort('cash_available')}
-                          className="hover:bg-white/30 dark:hover:bg-white/15 px-1 py-0.5 rounded transition-colors"
-                        >
-                          Cash Available
-                          {sortField === 'cash_available' && (
-                            <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                          )}
-                        </button>
+                        {getColumnConfig('cash_available') && (
+                          <TableHeaderFilterSort
+                            column={getColumnConfig('cash_available')!}
+                            projections={legacyFilteredProjections}
+                            currentFilter={columnFilters.get('cash_available') ?? null}
+                            currentSort={getSortRule(sortState, 'cash_available')}
+                            onFilterChange={handleFilterChange}
+                            onSortChange={handleSortChange}
+                          />
+                        )}
                       </th>
+                      {/* Cash per Week */}
                       <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium bg-white/15 dark:bg-white/10">
-                        <button
-                          onClick={() => handleSort('cash_per_week')}
-                          className="hover:bg-white/30 dark:hover:bg-white/15 px-1 py-0.5 rounded transition-colors"
-                        >
-                          Cash per Week
-                          {sortField === 'cash_per_week' && (
-                            <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                          )}
-                        </button>
+                        {getColumnConfig('cash_per_week') && (
+                          <TableHeaderFilterSort
+                            column={getColumnConfig('cash_per_week')!}
+                            projections={legacyFilteredProjections}
+                            currentFilter={columnFilters.get('cash_per_week') ?? null}
+                            currentSort={getSortRule(sortState, 'cash_per_week')}
+                            onFilterChange={handleFilterChange}
+                            onSortChange={handleSortChange}
+                          />
+                        )}
+                      </th>
+                      {/* Non-sortable columns */}
+                      <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium">
+                        Left Over (450/wk)
                       </th>
                       <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium">
-                        Left Over if only spend 450 per week
+                        Min Needed
                       </th>
+                      {/* Spending per Day */}
                       <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium">
-                        Min amount needed
+                        {getColumnConfig('spending_per_day') && (
+                          <TableHeaderFilterSort
+                            column={getColumnConfig('spending_per_day')!}
+                            projections={legacyFilteredProjections}
+                            currentFilter={columnFilters.get('spending_per_day') ?? null}
+                            currentSort={getSortRule(sortState, 'spending_per_day')}
+                            onFilterChange={handleFilterChange}
+                            onSortChange={handleSortChange}
+                          />
+                        )}
                       </th>
-                      <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium">
-                        <button
-                          onClick={() => handleSort('spending_per_day')}
-                          className="hover:bg-white/20 dark:hover:bg-white/10 px-1 py-0.5 rounded transition-colors"
-                        >
-                          Spending per Day
-                          {sortField === 'spending_per_day' && (
-                            <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
-                          )}
-                        </button>
+                      {/* Notes */}
+                      <th className="text-left py-1 px-1.5 glass-text-secondary text-xs font-medium">
+                        {getColumnConfig('notes') && (
+                          <TableHeaderFilterSort
+                            column={getColumnConfig('notes')!}
+                            projections={legacyFilteredProjections}
+                            currentFilter={columnFilters.get('notes') ?? null}
+                            currentSort={getSortRule(sortState, 'notes')}
+                            onFilterChange={handleFilterChange}
+                            onSortChange={handleSortChange}
+                          />
+                        )}
                       </th>
-                      <th className="text-left py-1 px-1.5 glass-text-secondary text-xs font-medium">Notes</th>
                       <th className="text-center py-1 px-1.5 glass-text-secondary text-xs font-medium w-10">Delete</th>
                     </tr>
                   </thead>
@@ -707,69 +868,56 @@ export default function HistoricalSpendTrackingTab({
                               <td className="py-1 px-1.5 text-center glass-text-primary text-xs sticky left-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-10 border-r border-white/10 dark:border-white/10">
                                 {formatDate(projection.projection_date)}
                               </td>
-                              
                               {/* Year */}
                               <td className="py-1 px-1.5 text-center glass-text-primary text-xs">
                                 {projectionYear}
                               </td>
-                              
                               {/* Time */}
                               <td className="py-1 px-1.5 text-center glass-text-primary text-xs">
                                 {projection.entry_time ? projection.entry_time.substring(0, 5) : '—'}
                               </td>
-                              
                               {/* Days Remaining */}
                               <td className="py-1 px-1.5 text-center glass-text-primary text-xs">
                                 {projection.days_remaining}
                               </td>
-                              
                               {/* Account Balance Columns */}
                               {uniqueAccounts.map(account => (
                                 <td key={account.id} className="py-1 px-1.5 text-right glass-text-primary text-xs">
                                   {formatCurrency(projection.account_balances[account.id] || 0)}
                                 </td>
                               ))}
-                              
                               {/* Total */}
                               <td className="py-1 px-1.5 text-right glass-text-primary text-xs font-bold bg-white/15 dark:bg-white/5">
                                 {formatCurrency(values.total)}
                               </td>
-                              
                               {/* Bills Remaining */}
                               <td className="py-1 px-1.5 text-right glass-text-primary text-xs font-semibold bg-white/15 dark:bg-white/5">
                                 {formatCurrency(projection.bills_remaining)}
                               </td>
-                              
                               {/* Cash Available */}
                               <td className="py-1 px-1.5 text-right glass-text-primary text-xs font-bold bg-white/15 dark:bg-white/5">
                                 {formatCurrency(values.cashAvailable)}
                               </td>
-                              
                               {/* Cash per week */}
                               <td className="py-1 px-1.5 text-right glass-text-secondary text-xs bg-white/15 dark:bg-white/5">
                                 {formatCurrency(values.cashPerWeek)}
                               </td>
-                              
-                              {/* Left Over if only spend 450 per week */}
+                              {/* Left Over */}
                               <td className="py-1 px-1.5 text-right glass-text-secondary text-xs">
                                 {formatCurrency(values.leftOver450PerWeek)}
                               </td>
-                              
                               {/* Min amount needed */}
                               <td className="py-1 px-1.5 text-right glass-text-secondary text-xs">
                                 {formatCurrency(values.minAmountNeeded)}
                               </td>
-                              
-                              {/* Spending available per day */}
+                              {/* Spending per day */}
                               <td className="py-1 px-1.5 text-right glass-text-secondary text-xs">
                                 {formatCurrency(values.spendingPerDay)}
                               </td>
-                              
                               {/* Notes */}
                               <td className="py-1 px-1.5 glass-text-secondary text-xs truncate max-w-[100px]" title={projection.notes || ''}>
                                 {projection.notes || '—'}
                               </td>
-                              
                               {/* Delete Button */}
                               <td className="py-1 px-1.5 text-center">
                                 <Button
@@ -791,6 +939,177 @@ export default function HistoricalSpendTrackingTab({
                       </React.Fragment>
                     ))}
                   </tbody>
+                  {/* Summary Statistics Footer */}
+                  {summaryStats && (
+                    <tfoot className="border-t-2 border-white/30 dark:border-white/20">
+                      {/* SUM Row */}
+                      <tr className="bg-emerald-500/10 dark:bg-emerald-500/5">
+                        <td className="py-1.5 px-1.5 text-center font-bold text-emerald-600 dark:text-emerald-400 text-xs sticky left-0 bg-emerald-500/20 dark:bg-emerald-500/10 backdrop-blur-sm z-10 border-r border-white/10">
+                          SUM
+                        </td>
+                        <td className="py-1.5 px-1.5 text-center text-xs glass-text-secondary">—</td>
+                        <td className="py-1.5 px-1.5 text-center text-xs glass-text-secondary">—</td>
+                        <td className="py-1.5 px-1.5 text-center text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                          {summaryStats.daysRemaining.sum.toLocaleString()}
+                        </td>
+                        {uniqueAccounts.map(account => (
+                          <td key={account.id} className="py-1.5 px-1.5 text-right text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                            {formatCurrency(summaryStats.accounts[account.id]?.sum || 0)}
+                          </td>
+                        ))}
+                        <td className="py-1.5 px-1.5 text-right text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-white/15 dark:bg-white/5">
+                          {formatCurrency(summaryStats.total.sum)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-medium text-emerald-600 dark:text-emerald-400 bg-white/15 dark:bg-white/5">
+                          {formatCurrency(summaryStats.billsRemaining.sum)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-white/15 dark:bg-white/5">
+                          {formatCurrency(summaryStats.cashAvailable.sum)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-medium text-emerald-600 dark:text-emerald-400 bg-white/15 dark:bg-white/5">
+                          {formatCurrency(summaryStats.cashPerWeek.sum)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                          {formatCurrency(summaryStats.leftOver450.sum)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                          {formatCurrency(summaryStats.minNeeded.sum)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                          {formatCurrency(summaryStats.spendingPerDay.sum)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-xs glass-text-secondary">—</td>
+                        <td className="py-1.5 px-1.5 text-center text-xs glass-text-secondary">—</td>
+                      </tr>
+                      {/* AVG Row */}
+                      <tr className="bg-blue-500/10 dark:bg-blue-500/5">
+                        <td className="py-1.5 px-1.5 text-center font-bold text-blue-600 dark:text-blue-400 text-xs sticky left-0 bg-blue-500/20 dark:bg-blue-500/10 backdrop-blur-sm z-10 border-r border-white/10">
+                          AVG
+                        </td>
+                        <td className="py-1.5 px-1.5 text-center text-xs glass-text-secondary">—</td>
+                        <td className="py-1.5 px-1.5 text-center text-xs glass-text-secondary">—</td>
+                        <td className="py-1.5 px-1.5 text-center text-xs font-medium text-blue-600 dark:text-blue-400">
+                          {summaryStats.daysRemaining.avg.toFixed(1)}
+                        </td>
+                        {uniqueAccounts.map(account => (
+                          <td key={account.id} className="py-1.5 px-1.5 text-right text-xs font-medium text-blue-600 dark:text-blue-400">
+                            {formatCurrency(summaryStats.accounts[account.id]?.avg || 0)}
+                          </td>
+                        ))}
+                        <td className="py-1.5 px-1.5 text-right text-xs font-bold text-blue-600 dark:text-blue-400 bg-white/15 dark:bg-white/5">
+                          {formatCurrency(summaryStats.total.avg)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-medium text-blue-600 dark:text-blue-400 bg-white/15 dark:bg-white/5">
+                          {formatCurrency(summaryStats.billsRemaining.avg)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-bold text-blue-600 dark:text-blue-400 bg-white/15 dark:bg-white/5">
+                          {formatCurrency(summaryStats.cashAvailable.avg)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-medium text-blue-600 dark:text-blue-400 bg-white/15 dark:bg-white/5">
+                          {formatCurrency(summaryStats.cashPerWeek.avg)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-medium text-blue-600 dark:text-blue-400">
+                          {formatCurrency(summaryStats.leftOver450.avg)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-medium text-blue-600 dark:text-blue-400">
+                          {formatCurrency(summaryStats.minNeeded.avg)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-medium text-blue-600 dark:text-blue-400">
+                          {formatCurrency(summaryStats.spendingPerDay.avg)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-xs glass-text-secondary">—</td>
+                        <td className="py-1.5 px-1.5 text-center text-xs glass-text-secondary">—</td>
+                      </tr>
+                      {/* MAX Row */}
+                      <tr className="bg-amber-500/10 dark:bg-amber-500/5">
+                        <td className="py-1.5 px-1.5 text-center font-bold text-amber-600 dark:text-amber-400 text-xs sticky left-0 bg-amber-500/20 dark:bg-amber-500/10 backdrop-blur-sm z-10 border-r border-white/10">
+                          MAX
+                        </td>
+                        <td className="py-1.5 px-1.5 text-center text-xs glass-text-secondary">—</td>
+                        <td className="py-1.5 px-1.5 text-center text-xs glass-text-secondary">—</td>
+                        <td className="py-1.5 px-1.5 text-center text-xs font-medium text-amber-600 dark:text-amber-400">
+                          {summaryStats.daysRemaining.max.toLocaleString()}
+                        </td>
+                        {uniqueAccounts.map(account => (
+                          <td key={account.id} className="py-1.5 px-1.5 text-right text-xs font-medium text-amber-600 dark:text-amber-400">
+                            {formatCurrency(summaryStats.accounts[account.id]?.max || 0)}
+                          </td>
+                        ))}
+                        <td className="py-1.5 px-1.5 text-right text-xs font-bold text-amber-600 dark:text-amber-400 bg-white/15 dark:bg-white/5">
+                          {formatCurrency(summaryStats.total.max)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-medium text-amber-600 dark:text-amber-400 bg-white/15 dark:bg-white/5">
+                          {formatCurrency(summaryStats.billsRemaining.max)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-bold text-amber-600 dark:text-amber-400 bg-white/15 dark:bg-white/5">
+                          {formatCurrency(summaryStats.cashAvailable.max)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-medium text-amber-600 dark:text-amber-400 bg-white/15 dark:bg-white/5">
+                          {formatCurrency(summaryStats.cashPerWeek.max)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-medium text-amber-600 dark:text-amber-400">
+                          {formatCurrency(summaryStats.leftOver450.max)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-medium text-amber-600 dark:text-amber-400">
+                          {formatCurrency(summaryStats.minNeeded.max)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-medium text-amber-600 dark:text-amber-400">
+                          {formatCurrency(summaryStats.spendingPerDay.max)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-xs glass-text-secondary">—</td>
+                        <td className="py-1.5 px-1.5 text-center text-xs glass-text-secondary">—</td>
+                      </tr>
+                      {/* MIN Row */}
+                      <tr className="bg-purple-500/10 dark:bg-purple-500/5">
+                        <td className="py-1.5 px-1.5 text-center font-bold text-purple-600 dark:text-purple-400 text-xs sticky left-0 bg-purple-500/20 dark:bg-purple-500/10 backdrop-blur-sm z-10 border-r border-white/10">
+                          MIN
+                        </td>
+                        <td className="py-1.5 px-1.5 text-center text-xs glass-text-secondary">—</td>
+                        <td className="py-1.5 px-1.5 text-center text-xs glass-text-secondary">—</td>
+                        <td className="py-1.5 px-1.5 text-center text-xs font-medium text-purple-600 dark:text-purple-400">
+                          {summaryStats.daysRemaining.min.toLocaleString()}
+                        </td>
+                        {uniqueAccounts.map(account => (
+                          <td key={account.id} className="py-1.5 px-1.5 text-right text-xs font-medium text-purple-600 dark:text-purple-400">
+                            {formatCurrency(summaryStats.accounts[account.id]?.min || 0)}
+                          </td>
+                        ))}
+                        <td className="py-1.5 px-1.5 text-right text-xs font-bold text-purple-600 dark:text-purple-400 bg-white/15 dark:bg-white/5">
+                          {formatCurrency(summaryStats.total.min)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-medium text-purple-600 dark:text-purple-400 bg-white/15 dark:bg-white/5">
+                          {formatCurrency(summaryStats.billsRemaining.min)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-bold text-purple-600 dark:text-purple-400 bg-white/15 dark:bg-white/5">
+                          {formatCurrency(summaryStats.cashAvailable.min)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-medium text-purple-600 dark:text-purple-400 bg-white/15 dark:bg-white/5">
+                          {formatCurrency(summaryStats.cashPerWeek.min)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-medium text-purple-600 dark:text-purple-400">
+                          {formatCurrency(summaryStats.leftOver450.min)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-medium text-purple-600 dark:text-purple-400">
+                          {formatCurrency(summaryStats.minNeeded.min)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-right text-xs font-medium text-purple-600 dark:text-purple-400">
+                          {formatCurrency(summaryStats.spendingPerDay.min)}
+                        </td>
+                        <td className="py-1.5 px-1.5 text-xs glass-text-secondary">—</td>
+                        <td className="py-1.5 px-1.5 text-center text-xs glass-text-secondary">—</td>
+                      </tr>
+                      {/* Count Row */}
+                      <tr className="bg-slate-500/10 dark:bg-slate-500/5 border-t border-white/20">
+                        <td className="py-1.5 px-1.5 text-center font-bold glass-text-primary text-xs sticky left-0 bg-slate-500/20 dark:bg-slate-500/10 backdrop-blur-sm z-10 border-r border-white/10">
+                          COUNT
+                        </td>
+                        <td colSpan={3 + uniqueAccounts.length + 10} className="py-1.5 px-1.5 text-xs glass-text-primary font-medium">
+                          {summaryStats.count.toLocaleString()} rows
+                        </td>
+                        <td className="py-1.5 px-1.5 text-center text-xs glass-text-secondary">—</td>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
                 </div>
               </div>
