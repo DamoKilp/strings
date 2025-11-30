@@ -98,21 +98,42 @@ export default function HealthImportPage() {
       // Note: Supabase uploadToSignedUrl doesn't support progress callbacks
       // We'll simulate progress based on file size and upload time
       const uploadStartTime = Date.now()
-      const progressInterval = setInterval(() => {
-        const elapsed = Date.now() - uploadStartTime
-        // Estimate: assume 10MB/s upload speed, cap at 90%
-        const estimatedProgress = Math.min(20 + (elapsed / 1000) * 5, 90)
-        setProgress(Math.round(estimatedProgress))
-      }, 500)
+      let progressInterval: ReturnType<typeof setInterval> | null = null
+      
+      try {
+        progressInterval = setInterval(() => {
+          const elapsed = Date.now() - uploadStartTime
+          // Estimate: assume 10MB/s upload speed, cap at 90%
+          const estimatedProgress = Math.min(20 + (elapsed / 1000) * 5, 90)
+          setProgress(Math.round(estimatedProgress))
+        }, 500)
 
-      const { error: uploadError } = await supabase.storage
-        .from('imports')
-        .uploadToSignedUrl(objectKey, token, file)
+        console.log('Starting upload to Supabase Storage...', { objectKey, fileSize: file.size })
+        
+        const uploadResult = await supabase.storage
+          .from('imports')
+          .uploadToSignedUrl(objectKey, token, file)
 
-      clearInterval(progressInterval)
+        if (progressInterval) {
+          clearInterval(progressInterval)
+          progressInterval = null
+        }
 
-      if (uploadError) {
-        throw new Error(`Upload failed: ${uploadError.message}`)
+        console.log('Upload result:', { error: uploadResult.error, data: uploadResult.data })
+
+        if (uploadResult.error) {
+          throw new Error(`Upload failed: ${uploadResult.error.message}`)
+        }
+      } catch (uploadErr: unknown) {
+        if (progressInterval) {
+          clearInterval(progressInterval)
+          progressInterval = null
+        }
+        // Re-throw to be caught by outer catch block
+        if (uploadErr instanceof Error) {
+          throw uploadErr
+        }
+        throw new Error('Upload failed with unknown error')
       }
 
       // Step 3: Register import job
@@ -138,7 +159,15 @@ export default function HealthImportPage() {
     } catch (e: unknown) {
       const err = e as Error
       console.error('Upload error:', err)
-      setStatus(err?.message || 'Upload failed')
+      
+      // Handle specific error types
+      if (err.name === 'AbortError') {
+        setStatus('Upload was cancelled or interrupted. Please try again.')
+      } else if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+        setStatus('Network error - please check your connection and try again.')
+      } else {
+        setStatus(err?.message || 'Upload failed')
+      }
       setProgress(0)
     }
   }, [file, validateZipFile])

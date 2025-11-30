@@ -38,6 +38,8 @@ import {
   getBillingPeriods,
   getBillingPeriod,
   createBillingPeriod,
+  getSpendTrackingColumnOrder,
+  saveSpendTrackingColumnOrder,
   type FinanceAccount,
   type FinanceBill,
   type MonthlySnapshot,
@@ -166,23 +168,12 @@ export default function FinancePageClient({
     }
   }, [billsSortDirection])
   
-  // Spend Tracking table column order state with localStorage persistence
-  const [spendTrackingColumnOrder, setSpendTrackingColumnOrder] = useState<string[]>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('spendTrackingColumnOrder')
-      if (saved) {
-        try {
-          return JSON.parse(saved)
-        } catch {
-          // Invalid JSON, use default
-        }
-      }
-    }
-    // Default order
+  // Get default column order
+  const getDefaultColumnOrder = useCallback((accountList: FinanceAccount[]) => {
     return [
       'time',
       'daysRemaining',
-      ...accounts.map(a => `account_${a.id}`),
+      ...accountList.map(a => `account_${a.id}`),
       'total',
       'billsRemaining',
       'cashAvailable',
@@ -193,12 +184,141 @@ export default function FinancePageClient({
       'notes',
       'delete'
     ]
+  }, [])
+
+  // Spend Tracking table column order state with database persistence
+  const [spendTrackingColumnOrder, setSpendTrackingColumnOrder] = useState<string[]>(() => {
+    // Initialize with default order, will be loaded from DB on mount
+    return getDefaultColumnOrder(accounts)
   })
   
+  const [isLoadingColumnOrder, setIsLoadingColumnOrder] = useState(true)
+  const saveColumnOrderTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined)
+
+  // Load column order from database on mount
+  useEffect(() => {
+    if (!user || isAuthLoading) return
+
+    let mounted = true
+    
+    const loadColumnOrder = async () => {
+      try {
+        const result = await getSpendTrackingColumnOrder()
+        if (!mounted) return
+
+        if (result.error) {
+          console.warn('Failed to load column order from DB, using localStorage fallback:', result.error)
+          // Fallback to localStorage
+          if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('spendTrackingColumnOrder')
+            if (saved) {
+              try {
+                const parsed = JSON.parse(saved)
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  setSpendTrackingColumnOrder(parsed)
+                  setIsLoadingColumnOrder(false)
+                  return
+                }
+              } catch {
+                // Invalid JSON, continue to default
+              }
+            }
+          }
+          // Use default order
+          setSpendTrackingColumnOrder(getDefaultColumnOrder(accounts))
+        } else if (result.data && Array.isArray(result.data) && result.data.length > 0) {
+          setSpendTrackingColumnOrder(result.data)
+        } else {
+          // No saved order, try localStorage fallback
+          if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('spendTrackingColumnOrder')
+            if (saved) {
+              try {
+                const parsed = JSON.parse(saved)
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  setSpendTrackingColumnOrder(parsed)
+                  // Migrate localStorage to DB
+                  saveSpendTrackingColumnOrder(parsed).catch(() => {
+                    // Silent fail on migration
+                  })
+                } else {
+                  setSpendTrackingColumnOrder(getDefaultColumnOrder(accounts))
+                }
+              } catch {
+                setSpendTrackingColumnOrder(getDefaultColumnOrder(accounts))
+              }
+            } else {
+              setSpendTrackingColumnOrder(getDefaultColumnOrder(accounts))
+            }
+          } else {
+            setSpendTrackingColumnOrder(getDefaultColumnOrder(accounts))
+          }
+        }
+      } catch (err) {
+        console.error('Error loading column order:', err)
+        if (mounted) {
+          // Fallback to localStorage
+          if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('spendTrackingColumnOrder')
+            if (saved) {
+              try {
+                const parsed = JSON.parse(saved)
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  setSpendTrackingColumnOrder(parsed)
+                } else {
+                  setSpendTrackingColumnOrder(getDefaultColumnOrder(accounts))
+                }
+              } catch {
+                setSpendTrackingColumnOrder(getDefaultColumnOrder(accounts))
+              }
+            } else {
+              setSpendTrackingColumnOrder(getDefaultColumnOrder(accounts))
+            }
+          } else {
+            setSpendTrackingColumnOrder(getDefaultColumnOrder(accounts))
+          }
+        }
+      } finally {
+        if (mounted) {
+          setIsLoadingColumnOrder(false)
+        }
+      }
+    }
+
+    loadColumnOrder()
+
+    return () => {
+      mounted = false
+    }
+  }, [user, isAuthLoading, accounts, getDefaultColumnOrder])
+
+  // Debounced save to database
+  const saveColumnOrderToDB = useCallback((columnOrder: string[]) => {
+    if (saveColumnOrderTimeoutRef.current) {
+      clearTimeout(saveColumnOrderTimeoutRef.current)
+    }
+
+    saveColumnOrderTimeoutRef.current = setTimeout(async () => {
+      try {
+        await saveSpendTrackingColumnOrder(columnOrder)
+        // Also save to localStorage as backup
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('spendTrackingColumnOrder', JSON.stringify(columnOrder))
+        }
+      } catch (err) {
+        console.error('Failed to save column order to DB:', err)
+        // Still save to localStorage as fallback
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('spendTrackingColumnOrder', JSON.stringify(columnOrder))
+        }
+      }
+    }, 500) // 500ms debounce
+  }, [])
+
   // Update column order when accounts change (add new account columns)
   const accountIdsStr = useMemo(() => accounts.map(a => a.id).sort().join(','), [accounts])
   useEffect(() => {
-    if (accounts.length === 0) return
+    if (accounts.length === 0 || isLoadingColumnOrder) return
     
     const accountColumnIds = accounts.map(a => `account_${a.id}`)
     const currentAccountColumns = spendTrackingColumnOrder.filter(id => id.startsWith('account_'))
@@ -217,20 +337,27 @@ export default function FinancePageClient({
         ...nonAccountColumns.slice(accountIndex)
       ]
       setSpendTrackingColumnOrder(newOrder)
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('spendTrackingColumnOrder', JSON.stringify(newOrder))
-      }
+      saveColumnOrderToDB(newOrder)
     }
     // Only depend on accountIdsStr, not spendTrackingColumnOrder to avoid loops
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountIdsStr])
+  }, [accountIdsStr, isLoadingColumnOrder, saveColumnOrderToDB])
   
-  // Save column order to localStorage whenever it changes
+  // Save column order to database whenever it changes (debounced)
   useEffect(() => {
-    if (typeof window !== 'undefined' && spendTrackingColumnOrder.length > 0) {
-      localStorage.setItem('spendTrackingColumnOrder', JSON.stringify(spendTrackingColumnOrder))
+    if (isLoadingColumnOrder || spendTrackingColumnOrder.length === 0) return
+    
+    saveColumnOrderToDB(spendTrackingColumnOrder)
+  }, [spendTrackingColumnOrder, isLoadingColumnOrder, saveColumnOrderToDB])
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (saveColumnOrderTimeoutRef.current) {
+        clearTimeout(saveColumnOrderTimeoutRef.current)
+      }
     }
-  }, [spendTrackingColumnOrder])
+  }, [])
   
   // Handle column reordering via drag and drop
   const handleColumnDragStart = useCallback((e: React.DragEvent, columnId: string) => {

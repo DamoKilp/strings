@@ -138,7 +138,33 @@ function parseFinancialData(
     return { rows: [], summary: { totalRows: 0, validRows: 0, skippedRows: 0, columnsFound: { daysRemaining: false, year: false, month: false, billsRemaining: false, notes: false, accountColumns: 0 } } }
   }
   
-  const headers = (jsonData[0] as string[]).map(h => String(h || '').trim())
+  // Find the header row by looking for expected column names
+  // The template has instruction rows before the actual headers
+  let headerRowIndex = -1
+  for (let i = 0; i < Math.min(jsonData.length, 10); i++) {
+    const row = jsonData[i] as unknown[]
+    if (!row || row.length === 0) continue
+    
+    const rowStrings = row.map(cell => String(cell || '').trim().toLowerCase())
+    // Check if this row contains expected header keywords
+    const hasDaysRemaining = rowStrings.some(h => /days?\s*remaining/.test(h))
+    const hasYear = rowStrings.some(h => /^year$/.test(h))
+    const hasMonth = rowStrings.some(h => /^month$/.test(h))
+    const hasBillsRemaining = rowStrings.some(h => /bills?\s*remaining/.test(h))
+    
+    // If we find multiple expected headers, this is likely the header row
+    if (hasDaysRemaining && hasYear && hasMonth && hasBillsRemaining) {
+      headerRowIndex = i
+      break
+    }
+  }
+  
+  // Fallback to first row if header row not found
+  if (headerRowIndex === -1) {
+    headerRowIndex = 0
+  }
+  
+  const headers = (jsonData[headerRowIndex] as string[]).map(h => String(h || '').trim())
   
   // Find column indices
   const daysRemainingIndex = headers.findIndex(h => 
@@ -172,7 +198,7 @@ function parseFinancialData(
   )
   
   const summary = {
-    totalRows: jsonData.length - 1, // Exclude header
+    totalRows: jsonData.length - (headerRowIndex + 1), // Exclude header and rows before it
     validRows: 0,
     skippedRows: 0,
     columnsFound: {
@@ -185,8 +211,9 @@ function parseFinancialData(
     }
   }
   
-  // Process data rows
-  for (let i = 1; i < jsonData.length; i++) {
+  // Process data rows (start after header row)
+  const dataStartRow = headerRowIndex + 1
+  for (let i = dataStartRow; i < jsonData.length; i++) {
     const row = jsonData[i] as unknown[]
     if (!row || row.length === 0) continue
     

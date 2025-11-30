@@ -16,6 +16,9 @@ const nextConfig: NextConfig = {
       bodySizeLimit: '500mb', // Match our 500MB file upload limit
     },
   },
+  // External packages for server components and API routes
+  // exceljs uses Node.js-specific modules and should not be bundled
+  serverExternalPackages: ['exceljs'],
   // Migrate SVG handling to Turbopack rules when available; keep webpack as fallback
   webpack(config) {
     // Handle SVG imports as React components using SVGR (webpack build fallback)

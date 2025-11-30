@@ -578,11 +578,11 @@ export default function HistoricalSpendTrackingTab({
                 <div className="min-w-full inline-block">
                   <table className="w-full text-xs min-w-[800px]">
                   <thead>
-                    <tr className="border-b border-white/10">
-                      <th className="text-center py-1 px-1.5 glass-text-secondary text-xs font-medium sticky left-0 bg-slate-900/95 z-10">
+                    <tr className="border-b border-white/10 dark:border-white/10">
+                      <th className="text-center py-1 px-1.5 glass-text-secondary text-xs font-medium sticky left-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-10 border-r border-white/10 dark:border-white/10">
                         <button
                           onClick={() => handleSort('date')}
-                          className="hover:bg-white/10 px-1 py-0.5 rounded transition-colors"
+                          className="hover:bg-white/20 dark:hover:bg-white/10 px-1 py-0.5 rounded transition-colors"
                         >
                           Date
                           {sortField === 'date' && (
@@ -596,7 +596,7 @@ export default function HistoricalSpendTrackingTab({
                       <th className="text-center py-1 px-1.5 glass-text-secondary text-xs font-medium">
                         <button
                           onClick={() => handleSort('time')}
-                          className="hover:bg-white/10 px-1 py-0.5 rounded transition-colors"
+                          className="hover:bg-white/20 dark:hover:bg-white/10 px-1 py-0.5 rounded transition-colors"
                         >
                           Time
                           {sortField === 'time' && (
@@ -607,7 +607,7 @@ export default function HistoricalSpendTrackingTab({
                       <th className="text-center py-1 px-1.5 glass-text-secondary text-xs font-medium">
                         <button
                           onClick={() => handleSort('days_remaining')}
-                          className="hover:bg-white/10 px-1 py-0.5 rounded transition-colors"
+                          className="hover:bg-white/20 dark:hover:bg-white/10 px-1 py-0.5 rounded transition-colors"
                         >
                           Days Remaining
                           {sortField === 'days_remaining' && (
@@ -620,10 +620,10 @@ export default function HistoricalSpendTrackingTab({
                           {account.name}
                         </th>
                       ))}
-                      <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium bg-white/10">
+                      <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium bg-white/15 dark:bg-white/10">
                         <button
                           onClick={() => handleSort('total')}
-                          className="hover:bg-white/10 px-1 py-0.5 rounded transition-colors"
+                          className="hover:bg-white/30 dark:hover:bg-white/15 px-1 py-0.5 rounded transition-colors"
                         >
                           Total
                           {sortField === 'total' && (
@@ -631,10 +631,10 @@ export default function HistoricalSpendTrackingTab({
                           )}
                         </button>
                       </th>
-                      <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium bg-white/10">
+                      <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium bg-white/15 dark:bg-white/10">
                         <button
                           onClick={() => handleSort('bills_remaining')}
-                          className="hover:bg-white/10 px-1 py-0.5 rounded transition-colors"
+                          className="hover:bg-white/30 dark:hover:bg-white/15 px-1 py-0.5 rounded transition-colors"
                         >
                           Bills Remaining
                           {sortField === 'bills_remaining' && (
@@ -642,10 +642,10 @@ export default function HistoricalSpendTrackingTab({
                           )}
                         </button>
                       </th>
-                      <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium bg-white/10">
+                      <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium bg-white/15 dark:bg-white/10">
                         <button
                           onClick={() => handleSort('cash_available')}
-                          className="hover:bg-white/10 px-1 py-0.5 rounded transition-colors"
+                          className="hover:bg-white/30 dark:hover:bg-white/15 px-1 py-0.5 rounded transition-colors"
                         >
                           Cash Available
                           {sortField === 'cash_available' && (
@@ -653,10 +653,10 @@ export default function HistoricalSpendTrackingTab({
                           )}
                         </button>
                       </th>
-                      <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium bg-white/10">
+                      <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium bg-white/15 dark:bg-white/10">
                         <button
                           onClick={() => handleSort('cash_per_week')}
-                          className="hover:bg-white/10 px-1 py-0.5 rounded transition-colors"
+                          className="hover:bg-white/30 dark:hover:bg-white/15 px-1 py-0.5 rounded transition-colors"
                         >
                           Cash per Week
                           {sortField === 'cash_per_week' && (
@@ -673,7 +673,7 @@ export default function HistoricalSpendTrackingTab({
                       <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium">
                         <button
                           onClick={() => handleSort('spending_per_day')}
-                          className="hover:bg-white/10 px-1 py-0.5 rounded transition-colors"
+                          className="hover:bg-white/20 dark:hover:bg-white/10 px-1 py-0.5 rounded transition-colors"
                         >
                           Spending per Day
                           {sortField === 'spending_per_day' && (
@@ -689,7 +689,7 @@ export default function HistoricalSpendTrackingTab({
                     {groupedProjections.map((group) => (
                       <React.Fragment key={group.yearMonth}>
                         {/* Month/Year Header Row */}
-                        <tr className="bg-white/5 border-b border-white/10">
+                        <tr className="bg-white/10 dark:bg-white/5 border-b border-white/20 dark:border-white/10">
                           <td 
                             colSpan={5 + uniqueAccounts.length + 9} 
                             className="py-2 px-3 glass-text-primary font-semibold text-sm"
@@ -702,9 +702,9 @@ export default function HistoricalSpendTrackingTab({
                           const values = calculateProjectionValues(projection)
                           const projectionYear = new Date(projection.projection_date).getFullYear()
                           return (
-                            <tr key={projection.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                            <tr key={projection.id} className="border-b border-white/10 dark:border-white/5 hover:bg-white/10 dark:hover:bg-white/5 transition-colors">
                               {/* Date */}
-                              <td className="py-1 px-1.5 text-center glass-text-primary text-xs sticky left-0 bg-slate-900/95 z-10">
+                              <td className="py-1 px-1.5 text-center glass-text-primary text-xs sticky left-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-10 border-r border-white/10 dark:border-white/10">
                                 {formatDate(projection.projection_date)}
                               </td>
                               
@@ -731,22 +731,22 @@ export default function HistoricalSpendTrackingTab({
                               ))}
                               
                               {/* Total */}
-                              <td className="py-1 px-1.5 text-right glass-text-primary text-xs font-bold bg-white/5">
+                              <td className="py-1 px-1.5 text-right glass-text-primary text-xs font-bold bg-white/15 dark:bg-white/5">
                                 {formatCurrency(values.total)}
                               </td>
                               
                               {/* Bills Remaining */}
-                              <td className="py-1 px-1.5 text-right glass-text-primary text-xs font-semibold bg-white/5">
+                              <td className="py-1 px-1.5 text-right glass-text-primary text-xs font-semibold bg-white/15 dark:bg-white/5">
                                 {formatCurrency(projection.bills_remaining)}
                               </td>
                               
                               {/* Cash Available */}
-                              <td className="py-1 px-1.5 text-right glass-text-primary text-xs font-bold bg-white/5">
+                              <td className="py-1 px-1.5 text-right glass-text-primary text-xs font-bold bg-white/15 dark:bg-white/5">
                                 {formatCurrency(values.cashAvailable)}
                               </td>
                               
                               {/* Cash per week */}
-                              <td className="py-1 px-1.5 text-right glass-text-secondary text-xs bg-white/5">
+                              <td className="py-1 px-1.5 text-right glass-text-secondary text-xs bg-white/15 dark:bg-white/5">
                                 {formatCurrency(values.cashPerWeek)}
                               </td>
                               

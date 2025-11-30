@@ -699,3 +699,54 @@ export async function deleteBillingPeriod(id: string): Promise<{ error: string |
     return { error: err instanceof Error ? err.message : 'Unknown error' }
   }
 }
+
+// Table Preferences Actions
+export async function getSpendTrackingColumnOrder(): Promise<{ data: string[] | null; error: string | null }> {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { data: null, error: 'Not authenticated' }
+
+    const { data, error } = await supabase
+      .from('table_preferences')
+      .select('preferences')
+      .eq('user_id', user.id)
+      .eq('table_name', 'spend_tracking')
+      .maybeSingle()
+
+    if (error) return { data: null, error: error.message }
+    
+    if (!data || !data.preferences) {
+      return { data: null, error: null }
+    }
+
+    const preferences = data.preferences as { column_order?: string[] }
+    return { data: preferences.column_order || null, error: null }
+  } catch (err) {
+    return { data: null, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+export async function saveSpendTrackingColumnOrder(columnOrder: string[]): Promise<{ error: string | null }> {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Not authenticated' }
+
+    const { error } = await supabase
+      .from('table_preferences')
+      .upsert({
+        user_id: user.id,
+        table_name: 'spend_tracking',
+        preferences: { column_order: columnOrder },
+        updated_at: new Date().toISOString(),
+      } as any, {
+        onConflict: 'user_id,table_name'
+      })
+
+    if (error) return { error: error.message }
+    return { error: null }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
