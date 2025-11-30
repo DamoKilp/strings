@@ -459,6 +459,10 @@ export default function HistoricalSpendTrackingTab({
     const cashAvailableValues = filteredAndSortedProjections.map(p => p.cash_available)
     const cashPerWeekValues = filteredAndSortedProjections
       .map(p => {
+        // If less than 7 days remaining, cash per week equals total cash available
+        if (p.days_remaining < 7) {
+          return p.cash_available
+        }
         const weeksRemaining = p.days_remaining > 0 ? p.days_remaining / 7 : 0
         return weeksRemaining > 0 ? (p.cash_per_week ?? p.cash_available / weeksRemaining) : 0
       })
@@ -559,7 +563,10 @@ export default function HistoricalSpendTrackingTab({
     const total = Object.values(projection.account_balances || {}).reduce((sum, val) => sum + val, 0)
     const cashAvailable = projection.cash_available
     const weeksRemaining = projection.days_remaining > 0 ? projection.days_remaining / 7 : 0
-    const cashPerWeek = weeksRemaining > 0 ? (projection.cash_per_week || cashAvailable / weeksRemaining) : 0
+    // If less than 7 days remaining, cash per week equals total cash available
+    const cashPerWeek = projection.days_remaining < 7 
+      ? cashAvailable 
+      : (weeksRemaining > 0 ? (projection.cash_per_week || cashAvailable / weeksRemaining) : 0)
     const leftOver450PerWeek = cashAvailable - (450 * weeksRemaining)
     const minAmountNeeded = projection.bills_remaining + (450 * weeksRemaining)
     const spendingPerDay = projection.days_remaining > 0 ? (projection.spending_per_day || cashAvailable / projection.days_remaining) : 0

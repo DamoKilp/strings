@@ -78,7 +78,7 @@ export default function ChartAnalysisTab({
   const [accounts, setAccounts] = useState<FinanceAccount[]>(initialAccounts)
   const [bills, setBills] = useState<FinanceBill[]>(initialBills)
   const [isLoading, setIsLoading] = useState(false)
-  const [dateRange, setDateRange] = useState<'all' | 'last12' | 'last6' | 'last3'>('last6')
+  const [dateRange, setDateRange] = useState<'all' | 'last12' | 'last6' | 'last3'>('all')
   
   // Theme-aware colors for charts
   const isDark = resolvedTheme === 'dark'
@@ -335,39 +335,46 @@ export default function ChartAnalysisTab({
   }, [chartData, accounts])
 
   // Calculate monthly average cash per week data
+  // NOTE: Use raw projections, not chartData, because chartData only has one entry per day
   const monthlyCashPerWeekData = useMemo(() => {
-    const monthlyMap = new Map<string, { cashAvailable: number[]; daysRemaining: number[] }>()
+    const monthlyMap = new Map<string, number[]>()
     
-    chartData.forEach(dataPoint => {
-      const date = new Date(dataPoint.fullDate)
+    // Filter projections by date range (same logic as chartData)
+    let filtered = [...projections]
+    if (dateRange !== 'all') {
+      const now = new Date()
+      const monthsAgo = dateRange === 'last12' ? 12 : dateRange === 'last6' ? 6 : 3
+      const cutoffDate = new Date(now.getFullYear(), now.getMonth() - monthsAgo, 1)
+      filtered = filtered.filter(p => new Date(p.projection_date) >= cutoffDate)
+    }
+    
+    // Process ALL projections for the month, not just one per day
+    filtered.forEach(projection => {
+      const date = new Date(projection.projection_date)
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
       
-      if (!monthlyMap.has(monthKey)) {
-        monthlyMap.set(monthKey, { cashAvailable: [], daysRemaining: [] })
-      }
-      
-      const monthData = monthlyMap.get(monthKey)!
-      // Only include data points with valid days remaining (to avoid division by zero)
-      if (dataPoint.daysRemaining > 0 && dataPoint.cashAvailable > 0) {
-        monthData.cashAvailable.push(dataPoint.cashAvailable)
-        monthData.daysRemaining.push(dataPoint.daysRemaining)
+      // Calculate cash per week for this projection
+      // Formula: cash_per_week = cash_available / (days_remaining / 7)
+      if (projection.days_remaining > 0 && projection.cash_available > 0) {
+        const weeksRemaining = projection.days_remaining / 7
+        const cashPerWeek = projection.cash_available / weeksRemaining
+        
+        if (!monthlyMap.has(monthKey)) {
+          monthlyMap.set(monthKey, [])
+        }
+        
+        monthlyMap.get(monthKey)!.push(cashPerWeek)
       }
     })
 
     return Array.from(monthlyMap.entries())
-      .map(([monthKey, monthData]) => {
+      .map(([monthKey, cashPerWeekValues]) => {
         const date = new Date(monthKey + '-01')
         
-        // Calculate cash per week for each data point, then average
-        const cashPerWeekValues = monthData.cashAvailable.map((cash, index) => {
-          const daysRemaining = monthData.daysRemaining[index]
-          const weeksRemaining = daysRemaining / 7
-          return weeksRemaining > 0 ? cash / weeksRemaining : 0
-        }).filter(v => v > 0) // Filter out invalid values
-        
-        const avgCashPerWeek = cashPerWeekValues.length > 0
-          ? cashPerWeekValues.reduce((a, b) => a + b, 0) / cashPerWeekValues.length
-          : 0
+        // Calculate average: sum all values, then divide by count
+        const sum = cashPerWeekValues.reduce((a, b) => a + b, 0)
+        const count = cashPerWeekValues.length
+        const avgCashPerWeek = count > 0 ? sum / count : 0
         
         return {
           monthKey, // Preserve for sorting
@@ -377,7 +384,7 @@ export default function ChartAnalysisTab({
       })
       .filter(item => item.avgCashPerWeek > 0) // Only include months with valid data
       .sort((a, b) => a.monthKey.localeCompare(b.monthKey)) // Sort by YYYY-MM format
-  }, [chartData])
+  }, [projections, dateRange])
 
   // Calculate monthly comparison data
   const monthlyComparisonData = useMemo(() => {
