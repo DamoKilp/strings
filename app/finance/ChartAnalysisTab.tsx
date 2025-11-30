@@ -367,7 +367,7 @@ export default function ChartAnalysisTab({
       }
     })
 
-    return Array.from(monthlyMap.entries())
+    const baseData = Array.from(monthlyMap.entries())
       .map(([monthKey, cashPerWeekValues]) => {
         const date = new Date(monthKey + '-01')
         
@@ -384,6 +384,32 @@ export default function ChartAnalysisTab({
       })
       .filter(item => item.avgCashPerWeek > 0) // Only include months with valid data
       .sort((a, b) => a.monthKey.localeCompare(b.monthKey)) // Sort by YYYY-MM format
+
+    // Calculate 18-month moving average
+    const windowSize = 18
+    const dataWithMovingAvg = baseData.map((item, index) => {
+      // Calculate moving average: average of current month and previous (windowSize - 1) months
+      let movingAvg = item.avgCashPerWeek
+      
+      if (index >= windowSize - 1) {
+        // We have enough data points for a full window
+        const windowData = baseData.slice(index - (windowSize - 1), index + 1)
+        const sum = windowData.reduce((acc, d) => acc + d.avgCashPerWeek, 0)
+        movingAvg = sum / windowSize
+      } else if (index > 0) {
+        // Partial window: average of available months
+        const windowData = baseData.slice(0, index + 1)
+        const sum = windowData.reduce((acc, d) => acc + d.avgCashPerWeek, 0)
+        movingAvg = sum / (index + 1)
+      }
+      
+      return {
+        ...item,
+        movingAvg,
+      }
+    })
+
+    return dataWithMovingAvg
   }, [projections, dateRange])
 
   // Calculate monthly comparison data
@@ -589,7 +615,7 @@ export default function ChartAnalysisTab({
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={350}>
-              <BarChart data={monthlyCashPerWeekData}>
+              <ComposedChart data={monthlyCashPerWeekData}>
                 <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
                 <XAxis 
                   dataKey="month" 
@@ -613,7 +639,16 @@ export default function ChartAnalysisTab({
                   name="Average Cash per Week"
                   radius={[4, 4, 0, 0]}
                 />
-              </BarChart>
+                <Line
+                  type="monotone"
+                  dataKey="movingAvg"
+                  stroke={CHART_COLORS.secondary}
+                  strokeWidth={3}
+                  name="18-Month Moving Average"
+                  dot={{ fill: CHART_COLORS.secondary, r: 4 }}
+                  strokeDasharray="0"
+                />
+              </ComposedChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>

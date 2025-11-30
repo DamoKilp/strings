@@ -38,6 +38,7 @@ import {
   getBillingPeriods,
   getBillingPeriod,
   createBillingPeriod,
+  updateBillingPeriod,
   getSpendTrackingColumnOrder,
   saveSpendTrackingColumnOrder,
   type FinanceAccount,
@@ -467,6 +468,11 @@ export default function FinancePageClient({
     }
   }, [payCycleStart, payCycleEnd])
 
+  // Ref to track if we're currently syncing from period (to prevent save during sync)
+  const isSyncingFromPeriodRef = useRef(false)
+  // Ref to track the last synced dates to detect manual changes
+  const lastSyncedDatesRef = useRef<{ start: string; end: string } | null>(null)
+
   // CRITICAL: Ensure pay cycle dates stay in sync with selected billing period
   // If a billing period is selected, its dates should always match the period's dates
   // This effect runs when the selected period changes and ensures dates match
@@ -474,15 +480,109 @@ export default function FinancePageClient({
     if (selectedBillingPeriodId && billingPeriods.length > 0) {
       const period = billingPeriods.find(p => p.id === selectedBillingPeriodId)
       if (period) {
-        // Always sync dates to match the period when period selection changes
-        // This ensures dates are correct even if something else tries to override them
         const periodStartFormatted = period.start_date.split('T')[0]
         const periodEndFormatted = period.end_date.split('T')[0]
+        
+        // Always sync dates when period changes (this is a period selection change)
+        // Set flag to prevent save during sync
+        isSyncingFromPeriodRef.current = true
         setPayCycleStart(periodStartFormatted)
         setPayCycleEnd(periodEndFormatted)
+        
+        // Update last synced dates
+        lastSyncedDatesRef.current = {
+          start: periodStartFormatted,
+          end: periodEndFormatted,
+        }
+        
+        // Reset flag after a brief delay to allow state to update
+        setTimeout(() => {
+          isSyncingFromPeriodRef.current = false
+        }, 100)
       }
     }
-  }, [selectedBillingPeriodId, billingPeriods, payCycleStart, payCycleEnd]) // Only sync when period selection changes
+  }, [selectedBillingPeriodId, billingPeriods]) // Only sync when period selection changes
+
+  // Save pay cycle date changes to the selected billing period in the database
+  useEffect(() => {
+    // Don't save if no period is selected or if we're currently syncing
+    if (!selectedBillingPeriodId || billingPeriods.length === 0 || isSyncingFromPeriodRef.current) {
+      return
+    }
+
+    const period = billingPeriods.find(p => p.id === selectedBillingPeriodId)
+    if (!period) return
+
+    // Check if dates actually changed from the period's dates
+    const periodStartFormatted = period.start_date.split('T')[0]
+    const periodEndFormatted = period.end_date.split('T')[0]
+    
+    // Only save if dates differ from the period's dates (user manually changed them)
+    const datesDiffer = payCycleStart !== periodStartFormatted || payCycleEnd !== periodEndFormatted
+    
+    // Also verify this is a manual change (not from sync) by checking against last synced dates
+    const isManualChange = !lastSyncedDatesRef.current || 
+      (payCycleStart !== lastSyncedDatesRef.current.start || payCycleEnd !== lastSyncedDatesRef.current.end)
+    
+    if (datesDiffer && isManualChange) {
+      console.log('Detected manual date change, will save after debounce:', {
+        periodId: selectedBillingPeriodId,
+        currentStart: payCycleStart,
+        currentEnd: payCycleEnd,
+        periodStart: periodStartFormatted,
+        periodEnd: periodEndFormatted,
+        lastSynced: lastSyncedDatesRef.current
+      })
+      
+      // Debounce the save to avoid too many database calls
+      const timeoutId = setTimeout(async () => {
+        // Double-check we're not syncing before saving
+        if (isSyncingFromPeriodRef.current) {
+          console.log('Skipping save - currently syncing')
+          return
+        }
+        
+        console.log('Saving billing period dates to database:', { 
+          periodId: selectedBillingPeriodId,
+          start: payCycleStart,
+          end: payCycleEnd 
+        })
+        
+        const result = await updateBillingPeriod(selectedBillingPeriodId, {
+          start_date: `${payCycleStart}T00:00:00.000Z`,
+          end_date: `${payCycleEnd}T23:59:59.999Z`,
+        })
+
+        if (result.error) {
+          console.error('Failed to update billing period:', result.error)
+          toast.error(`Failed to update billing period: ${result.error}`)
+          // Revert to period's dates on error
+          setPayCycleStart(periodStartFormatted)
+          setPayCycleEnd(periodEndFormatted)
+          lastSyncedDatesRef.current = {
+            start: periodStartFormatted,
+            end: periodEndFormatted,
+          }
+        } else {
+          console.log('Successfully updated billing period:', result.data)
+          // Update local billing periods state
+          setBillingPeriods(prev => prev.map(p => 
+            p.id === selectedBillingPeriodId 
+              ? { ...p, start_date: result.data!.start_date, end_date: result.data!.end_date }
+              : p
+          ))
+          // Update last synced dates to match what was saved
+          lastSyncedDatesRef.current = {
+            start: payCycleStart,
+            end: payCycleEnd,
+          }
+          toast.success('Billing period dates updated')
+        }
+      }, 500) // 500ms debounce
+
+      return () => clearTimeout(timeoutId)
+    }
+  }, [payCycleStart, payCycleEnd, selectedBillingPeriodId, billingPeriods])
 
   // Optimistically update account balance immediately
   const optimisticallyUpdateBalance = useCallback((accountId: string, newBalance: number) => {
