@@ -750,3 +750,66 @@ export async function saveSpendTrackingColumnOrder(columnOrder: string[]): Promi
     return { error: err instanceof Error ? err.message : 'Unknown error' }
   }
 }
+
+// Filter/Sort Preferences for Spend Tracking Table
+export interface SpendTrackingFilterPreferences {
+  columnFilters?: Record<string, unknown>
+  sortState?: Array<{ field: string; direction: 'asc' | 'desc'; priority: number }>
+  searchTerm?: string
+  dateFilter?: 'all' | 'last12' | 'last6' | 'last3' | 'custom'
+  customDateStart?: string
+  customDateEnd?: string
+  yearFilter?: string
+  minAmount?: string
+  maxAmount?: string
+  selectedAccounts?: string[]
+}
+
+export async function getSpendTrackingFilterPreferences(): Promise<{ data: SpendTrackingFilterPreferences | null; error: string | null }> {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { data: null, error: 'Not authenticated' }
+
+    const { data, error } = await supabase
+      .from('table_preferences')
+      .select('preferences')
+      .eq('user_id', user.id)
+      .eq('table_name', 'spend_tracking_filters')
+      .maybeSingle()
+
+    if (error) return { data: null, error: error.message }
+    
+    if (!data || !data.preferences) {
+      return { data: null, error: null }
+    }
+
+    return { data: data.preferences as SpendTrackingFilterPreferences, error: null }
+  } catch (err) {
+    return { data: null, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+export async function saveSpendTrackingFilterPreferences(preferences: SpendTrackingFilterPreferences): Promise<{ error: string | null }> {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Not authenticated' }
+
+    const { error } = await supabase
+      .from('table_preferences')
+      .upsert({
+        user_id: user.id,
+        table_name: 'spend_tracking_filters',
+        preferences: preferences,
+        updated_at: new Date().toISOString(),
+      } as any, {
+        onConflict: 'user_id,table_name'
+      })
+
+    if (error) return { error: error.message }
+    return { error: null }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}

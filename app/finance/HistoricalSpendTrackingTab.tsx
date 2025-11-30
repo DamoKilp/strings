@@ -1,18 +1,17 @@
 'use client'
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Checkbox } from '@/components/ui/checkbox'
-import { getAllProjections, deleteProjection, getAccounts, type FinanceProjection, type FinanceAccount } from '@/app/actions/finance'
+import { 
+  getAllProjections, 
+  deleteProjection, 
+  getAccounts, 
+  getSpendTrackingFilterPreferences,
+  saveSpendTrackingFilterPreferences,
+  type FinanceProjection, 
+  type FinanceAccount 
+} from '@/app/actions/finance'
 import { formatCurrency } from '@/lib/financeUtils'
 import { toast } from 'sonner'
 import FinanceImportDialog from './FinanceImportDialog'
@@ -25,12 +24,18 @@ import type {
   SortState,
   SortDirection,
   ColumnConfig,
+  SerializableFilterState,
+  SerializableSortState,
 } from '@/types/finance/filterTypes'
 import {
   createEmptyFilterState,
   createEmptySortState,
   createStaticColumnConfig,
   createAccountColumnConfig,
+  serializeFilterState,
+  deserializeFilterState,
+  serializeSortState,
+  deserializeSortState,
 } from '@/types/finance/filterTypes'
 import {
   applyAllFilters,
@@ -88,6 +93,100 @@ export default function HistoricalSpendTrackingTab({
   // New filter/sort state
   const [columnFilters, setColumnFilters] = useState<FilterState>(() => createEmptyFilterState())
   const [sortState, setSortState] = useState<SortState>(() => createEmptySortState())
+  
+  // Preferences persistence
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false)
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  
+  // Load saved preferences on mount
+  useEffect(() => {
+    async function loadPreferences() {
+      try {
+        const result = await getSpendTrackingFilterPreferences()
+        if (result.data) {
+          const prefs = result.data
+          
+          // Restore column filters
+          if (prefs.columnFilters) {
+            setColumnFilters(deserializeFilterState(prefs.columnFilters as SerializableFilterState))
+          }
+          
+          // Restore sort state
+          if (prefs.sortState) {
+            setSortState(deserializeSortState(prefs.sortState as SerializableSortState))
+          }
+          
+          // Restore legacy filters
+          if (prefs.searchTerm !== undefined) setSearchTerm(prefs.searchTerm)
+          if (prefs.dateFilter !== undefined) setDateFilter(prefs.dateFilter)
+          if (prefs.customDateStart !== undefined) setCustomDateStart(prefs.customDateStart)
+          if (prefs.customDateEnd !== undefined) setCustomDateEnd(prefs.customDateEnd)
+          if (prefs.yearFilter !== undefined) setYearFilter(prefs.yearFilter)
+          if (prefs.minAmount !== undefined) setMinAmount(prefs.minAmount)
+          if (prefs.maxAmount !== undefined) setMaxAmount(prefs.maxAmount)
+          if (prefs.selectedAccounts) {
+            setSelectedAccounts(new Set(prefs.selectedAccounts))
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load filter preferences:', error)
+      } finally {
+        setPreferencesLoaded(true)
+      }
+    }
+    
+    loadPreferences()
+  }, [])
+  
+  // Save preferences when filters change (debounced)
+  useEffect(() => {
+    // Don't save until preferences are loaded (to avoid overwriting with defaults)
+    if (!preferencesLoaded) return
+    
+    // Clear existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
+    }
+    
+    // Debounce save by 1 second
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        await saveSpendTrackingFilterPreferences({
+          columnFilters: serializeFilterState(columnFilters),
+          sortState: serializeSortState(sortState),
+          searchTerm,
+          dateFilter,
+          customDateStart,
+          customDateEnd,
+          yearFilter,
+          minAmount,
+          maxAmount,
+          selectedAccounts: Array.from(selectedAccounts),
+        })
+      } catch (error) {
+        console.error('Failed to save filter preferences:', error)
+      }
+    }, 1000)
+    
+    // Cleanup timeout on unmount
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+      }
+    }
+  }, [
+    preferencesLoaded,
+    columnFilters,
+    sortState,
+    searchTerm,
+    dateFilter,
+    customDateStart,
+    customDateEnd,
+    yearFilter,
+    minAmount,
+    maxAmount,
+    selectedAccounts,
+  ])
 
   // Extract unique accounts from all historical projections
   const uniqueAccounts = useMemo<AccountInfo[]>(() => {
@@ -173,16 +272,6 @@ export default function HistoricalSpendTrackingTab({
       })
     }
   }, [initialProjections.length, loadData])
-
-  // Extract available years from projections
-  const availableYears = useMemo(() => {
-    const years = new Set<number>()
-    projections.forEach(p => {
-      const year = new Date(p.projection_date).getFullYear()
-      years.add(year)
-    })
-    return Array.from(years).sort((a, b) => b - a)
-  }, [projections])
 
   // Apply legacy filters (year, date range, amount, accounts, search)
   const legacyFilteredProjections = useMemo(() => {
@@ -404,19 +493,6 @@ export default function HistoricalSpendTrackingTab({
     }
   }, [])
 
-  // Toggle account filter (legacy)
-  const toggleAccountFilter = useCallback((accountId: string) => {
-    setSelectedAccounts(prev => {
-      const next = new Set(prev)
-      if (next.has(accountId)) {
-        next.delete(accountId)
-      } else {
-        next.add(accountId)
-      }
-      return next
-    })
-  }, [])
-
   // Format date for display
   const formatDate = useCallback((dateString: string) => {
     const date = new Date(dateString)
@@ -475,10 +551,34 @@ export default function HistoricalSpendTrackingTab({
   }, [columnConfigs])
 
   return (
-    <div className="space-y-4 h-full flex flex-col">
+    <div className="space-y-2 h-full flex flex-col">
       {/* Header with Import/Export Buttons */}
-      <div className="flex items-center justify-between">
-        <h2 className="glass-text-primary text-lg font-semibold">Historical Spend Tracking</h2>
+      <div className="flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-3">
+          <h2 className="glass-text-primary text-lg font-semibold">Historical Spend Tracking</h2>
+          {/* Filter/Sort Status */}
+          <div className="flex items-center gap-2">
+            {activeColumnFilterCount > 0 && (
+              <button
+                onClick={() => setColumnFilters(createEmptyFilterState())}
+                className="text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded hover:bg-amber-500/30 transition-colors"
+              >
+                {activeColumnFilterCount} filter{activeColumnFilterCount > 1 ? 's' : ''} ✕
+              </button>
+            )}
+            {sortState.length > 0 && (
+              <button
+                onClick={() => setSortState(createEmptySortState())}
+                className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded hover:bg-blue-500/30 transition-colors"
+              >
+                {sortState.length} sort{sortState.length > 1 ? 's' : ''} ✕
+              </button>
+            )}
+            <span className="text-xs glass-text-secondary">
+              {filteredAndSortedProjections.length} of {projections.length} rows
+            </span>
+          </div>
+        </div>
         <div className="flex gap-2">
           <Button
             onClick={() => {
@@ -506,161 +606,6 @@ export default function HistoricalSpendTrackingTab({
         </div>
       </div>
 
-      {/* Filters and Search */}
-      <Card className="glass-large">
-        <CardHeader className="py-2">
-          <CardTitle className="glass-text-primary text-sm font-semibold flex items-center gap-2">
-            Filters
-            {activeColumnFilterCount > 0 && (
-              <span className="text-xs bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded">
-                {activeColumnFilterCount} column filter{activeColumnFilterCount > 1 ? 's' : ''} active
-              </span>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="py-2 space-y-3">
-          {/* Search */}
-          <div className="flex-1">
-            <Input
-              placeholder="Search by date, notes, time, or amount..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="glass-small"
-            />
-          </div>
-          
-          {/* Year and Date Filter Row */}
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Select value={yearFilter} onValueChange={setYearFilter}>
-              <SelectTrigger className="w-full sm:w-[120px] glass-small">
-                <SelectValue placeholder="Year" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Years</SelectItem>
-                {availableYears.map(year => (
-                  <SelectItem key={year} value={year.toString()}>
-                    {year}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            
-            <Select value={dateFilter} onValueChange={(v) => setDateFilter(v as typeof dateFilter)}>
-              <SelectTrigger className="w-full sm:w-[160px] glass-small">
-                <SelectValue placeholder="Date range" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Time</SelectItem>
-                <SelectItem value="last12">Last 12 Months</SelectItem>
-                <SelectItem value="last6">Last 6 Months</SelectItem>
-                <SelectItem value="last3">Last 3 Months</SelectItem>
-                <SelectItem value="custom">Custom Range</SelectItem>
-              </SelectContent>
-            </Select>
-            
-            {dateFilter === 'custom' && (
-              <>
-                <Input
-                  type="date"
-                  placeholder="Start date"
-                  value={customDateStart}
-                  onChange={(e) => setCustomDateStart(e.target.value)}
-                  className="glass-small flex-1"
-                />
-                <Input
-                  type="date"
-                  placeholder="End date"
-                  value={customDateEnd}
-                  onChange={(e) => setCustomDateEnd(e.target.value)}
-                  className="glass-small flex-1"
-                />
-              </>
-            )}
-          </div>
-
-          {/* Amount Filter Row */}
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Input
-              type="number"
-              placeholder="Min cash available"
-              value={minAmount}
-              onChange={(e) => setMinAmount(e.target.value)}
-              className="glass-small flex-1"
-            />
-            <Input
-              type="number"
-              placeholder="Max cash available"
-              value={maxAmount}
-              onChange={(e) => setMaxAmount(e.target.value)}
-              className="glass-small flex-1"
-            />
-          </div>
-
-          {/* Account Filter */}
-          {uniqueAccounts.length > 0 && (
-            <div className="space-y-2">
-              <label className="glass-text-secondary text-xs font-medium">Filter by Accounts:</label>
-              <div className="flex flex-wrap gap-2">
-                {uniqueAccounts.map(account => (
-                  <div key={account.id} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={`account-${account.id}`}
-                      checked={selectedAccounts.has(account.id)}
-                      onCheckedChange={() => toggleAccountFilter(account.id)}
-                    />
-                    <label
-                      htmlFor={`account-${account.id}`}
-                      className="glass-text-secondary text-xs cursor-pointer"
-                    >
-                      {account.name}
-                    </label>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Clear All Filters Button */}
-          {(activeColumnFilterCount > 0 || sortState.length > 0) && (
-            <div className="flex gap-2 pt-2 border-t border-white/10">
-              {activeColumnFilterCount > 0 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setColumnFilters(createEmptyFilterState())}
-                  className="text-xs text-amber-400 hover:text-amber-300"
-                >
-                  Clear Column Filters
-                </Button>
-              )}
-              {sortState.length > 0 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSortState(createEmptySortState())}
-                  className="text-xs text-blue-400 hover:text-blue-300"
-                >
-                  Clear All Sorts ({sortState.length})
-                </Button>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Results Summary */}
-      <div className="glass-small px-4 py-2 rounded-md">
-        <p className="glass-text-secondary text-sm">
-          Showing <span className="glass-text-primary font-semibold">{filteredAndSortedProjections.length}</span> of{' '}
-          <span className="glass-text-primary font-semibold">{projections.length}</span> projections
-          {sortState.length > 0 && (
-            <span className="ml-2 text-blue-400">
-              • Sorted by {sortState.length} column{sortState.length > 1 ? 's' : ''}
-            </span>
-          )}
-        </p>
-      </div>
-
       {/* Table */}
       {isLoading ? (
         <Card className="glass-large">
@@ -679,174 +624,170 @@ export default function HistoricalSpendTrackingTab({
           </CardContent>
         </Card>
       ) : (
-        <div className="flex-1 min-h-0 overflow-auto">
-          <Card className="glass-large">
-            <CardContent className="py-1">
-              <div className="overflow-x-auto -mx-1 sm:mx-0">
-                <div className="min-w-full inline-block">
-                  <table className="w-full text-xs min-w-[800px]">
-                  <thead>
-                    <tr className="border-b border-white/10 dark:border-white/10">
-                      {/* Date - Sticky */}
-                      <th className="text-center py-1 px-1.5 glass-text-secondary text-xs font-medium sticky left-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-10 border-r border-white/10 dark:border-white/10">
-                        {getColumnConfig('date') && (
-                          <TableHeaderFilterSort
-                            column={getColumnConfig('date')!}
-                            projections={legacyFilteredProjections}
-                            currentFilter={columnFilters.get('date') ?? null}
-                            currentSort={getSortRule(sortState, 'date')}
-                            onFilterChange={handleFilterChange}
-                            onSortChange={handleSortChange}
-                          />
-                        )}
-                      </th>
-                      {/* Year */}
-                      <th className="text-center py-1 px-1.5 glass-text-secondary text-xs font-medium">
-                        {getColumnConfig('year') && (
-                          <TableHeaderFilterSort
-                            column={getColumnConfig('year')!}
-                            projections={legacyFilteredProjections}
-                            currentFilter={columnFilters.get('year') ?? null}
-                            currentSort={getSortRule(sortState, 'year')}
-                            onFilterChange={handleFilterChange}
-                            onSortChange={handleSortChange}
-                          />
-                        )}
-                      </th>
-                      {/* Time */}
-                      <th className="text-center py-1 px-1.5 glass-text-secondary text-xs font-medium">
-                        {getColumnConfig('time') && (
-                          <TableHeaderFilterSort
-                            column={getColumnConfig('time')!}
-                            projections={legacyFilteredProjections}
-                            currentFilter={columnFilters.get('time') ?? null}
-                            currentSort={getSortRule(sortState, 'time')}
-                            onFilterChange={handleFilterChange}
-                            onSortChange={handleSortChange}
-                          />
-                        )}
-                      </th>
-                      {/* Days Remaining */}
-                      <th className="text-center py-1 px-1.5 glass-text-secondary text-xs font-medium">
-                        {getColumnConfig('days_remaining') && (
-                          <TableHeaderFilterSort
-                            column={getColumnConfig('days_remaining')!}
-                            projections={legacyFilteredProjections}
-                            currentFilter={columnFilters.get('days_remaining') ?? null}
-                            currentSort={getSortRule(sortState, 'days_remaining')}
-                            onFilterChange={handleFilterChange}
-                            onSortChange={handleSortChange}
-                          />
-                        )}
-                      </th>
-                      {/* Account Columns */}
-                      {uniqueAccounts.map(account => {
-                        const field = `account_${account.id}` as ColumnField
-                        const config = getColumnConfig(field)
-                        return (
-                          <th key={account.id} className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium">
-                            {config ? (
-                              <TableHeaderFilterSort
-                                column={config}
-                                projections={legacyFilteredProjections}
-                                currentFilter={columnFilters.get(field) ?? null}
-                                currentSort={getSortRule(sortState, field)}
-                                onFilterChange={handleFilterChange}
-                                onSortChange={handleSortChange}
-                              />
-                            ) : account.name}
-                          </th>
-                        )
-                      })}
-                      {/* Total */}
-                      <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium bg-white/15 dark:bg-white/10">
-                        {getColumnConfig('total') && (
-                          <TableHeaderFilterSort
-                            column={getColumnConfig('total')!}
-                            projections={legacyFilteredProjections}
-                            currentFilter={columnFilters.get('total') ?? null}
-                            currentSort={getSortRule(sortState, 'total')}
-                            onFilterChange={handleFilterChange}
-                            onSortChange={handleSortChange}
-                          />
-                        )}
-                      </th>
-                      {/* Bills Remaining */}
-                      <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium bg-white/15 dark:bg-white/10">
-                        {getColumnConfig('bills_remaining') && (
-                          <TableHeaderFilterSort
-                            column={getColumnConfig('bills_remaining')!}
-                            projections={legacyFilteredProjections}
-                            currentFilter={columnFilters.get('bills_remaining') ?? null}
-                            currentSort={getSortRule(sortState, 'bills_remaining')}
-                            onFilterChange={handleFilterChange}
-                            onSortChange={handleSortChange}
-                          />
-                        )}
-                      </th>
-                      {/* Cash Available */}
-                      <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium bg-white/15 dark:bg-white/10">
-                        {getColumnConfig('cash_available') && (
-                          <TableHeaderFilterSort
-                            column={getColumnConfig('cash_available')!}
-                            projections={legacyFilteredProjections}
-                            currentFilter={columnFilters.get('cash_available') ?? null}
-                            currentSort={getSortRule(sortState, 'cash_available')}
-                            onFilterChange={handleFilterChange}
-                            onSortChange={handleSortChange}
-                          />
-                        )}
-                      </th>
-                      {/* Cash per Week */}
-                      <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium bg-white/15 dark:bg-white/10">
-                        {getColumnConfig('cash_per_week') && (
-                          <TableHeaderFilterSort
-                            column={getColumnConfig('cash_per_week')!}
-                            projections={legacyFilteredProjections}
-                            currentFilter={columnFilters.get('cash_per_week') ?? null}
-                            currentSort={getSortRule(sortState, 'cash_per_week')}
-                            onFilterChange={handleFilterChange}
-                            onSortChange={handleSortChange}
-                          />
-                        )}
-                      </th>
-                      {/* Non-sortable columns */}
-                      <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium">
-                        Left Over (450/wk)
-                      </th>
-                      <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium">
-                        Min Needed
-                      </th>
-                      {/* Spending per Day */}
-                      <th className="text-right py-1 px-1.5 glass-text-secondary text-xs font-medium">
-                        {getColumnConfig('spending_per_day') && (
-                          <TableHeaderFilterSort
-                            column={getColumnConfig('spending_per_day')!}
-                            projections={legacyFilteredProjections}
-                            currentFilter={columnFilters.get('spending_per_day') ?? null}
-                            currentSort={getSortRule(sortState, 'spending_per_day')}
-                            onFilterChange={handleFilterChange}
-                            onSortChange={handleSortChange}
-                          />
-                        )}
-                      </th>
-                      {/* Notes */}
-                      <th className="text-left py-1 px-1.5 glass-text-secondary text-xs font-medium">
-                        {getColumnConfig('notes') && (
-                          <TableHeaderFilterSort
-                            column={getColumnConfig('notes')!}
-                            projections={legacyFilteredProjections}
-                            currentFilter={columnFilters.get('notes') ?? null}
-                            currentSort={getSortRule(sortState, 'notes')}
-                            onFilterChange={handleFilterChange}
-                            onSortChange={handleSortChange}
-                          />
-                        )}
-                      </th>
-                      <th className="text-center py-1 px-1.5 glass-text-secondary text-xs font-medium w-10">Delete</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+        <div className="flex-1 min-h-0 overflow-auto glass-large rounded-lg">
+          <table className="w-full text-xs min-w-[800px]">
+            <thead className="sticky top-0 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm">
+              <tr className="border-b border-white/10 dark:border-white/10">
+                {/* Date - Sticky horizontally */}
+                <th className="text-center py-2 px-1.5 glass-text-secondary text-xs font-medium sticky left-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm z-30 border-r border-white/10 dark:border-white/10">
+                  {getColumnConfig('date') && (
+                    <TableHeaderFilterSort
+                      column={getColumnConfig('date')!}
+                      projections={legacyFilteredProjections}
+                      currentFilter={columnFilters.get('date') ?? null}
+                      currentSort={getSortRule(sortState, 'date')}
+                      onFilterChange={handleFilterChange}
+                      onSortChange={handleSortChange}
+                    />
+                  )}
+                </th>
+                {/* Year */}
+                <th className="text-center py-2 px-1.5 glass-text-secondary text-xs font-medium bg-white/95 dark:bg-slate-900/95">
+                  {getColumnConfig('year') && (
+                    <TableHeaderFilterSort
+                      column={getColumnConfig('year')!}
+                      projections={legacyFilteredProjections}
+                      currentFilter={columnFilters.get('year') ?? null}
+                      currentSort={getSortRule(sortState, 'year')}
+                      onFilterChange={handleFilterChange}
+                      onSortChange={handleSortChange}
+                    />
+                  )}
+                </th>
+                {/* Time */}
+                <th className="text-center py-2 px-1.5 glass-text-secondary text-xs font-medium bg-white/95 dark:bg-slate-900/95">
+                  {getColumnConfig('time') && (
+                    <TableHeaderFilterSort
+                      column={getColumnConfig('time')!}
+                      projections={legacyFilteredProjections}
+                      currentFilter={columnFilters.get('time') ?? null}
+                      currentSort={getSortRule(sortState, 'time')}
+                      onFilterChange={handleFilterChange}
+                      onSortChange={handleSortChange}
+                    />
+                  )}
+                </th>
+                {/* Days Remaining */}
+                <th className="text-center py-2 px-1.5 glass-text-secondary text-xs font-medium bg-white/95 dark:bg-slate-900/95">
+                  {getColumnConfig('days_remaining') && (
+                    <TableHeaderFilterSort
+                      column={getColumnConfig('days_remaining')!}
+                      projections={legacyFilteredProjections}
+                      currentFilter={columnFilters.get('days_remaining') ?? null}
+                      currentSort={getSortRule(sortState, 'days_remaining')}
+                      onFilterChange={handleFilterChange}
+                      onSortChange={handleSortChange}
+                    />
+                  )}
+                </th>
+                {/* Account Columns */}
+                {uniqueAccounts.map(account => {
+                  const field = `account_${account.id}` as ColumnField
+                  const config = getColumnConfig(field)
+                  return (
+                    <th key={account.id} className="text-right py-2 px-1.5 glass-text-secondary text-xs font-medium bg-white/95 dark:bg-slate-900/95">
+                      {config ? (
+                        <TableHeaderFilterSort
+                          column={config}
+                          projections={legacyFilteredProjections}
+                          currentFilter={columnFilters.get(field) ?? null}
+                          currentSort={getSortRule(sortState, field)}
+                          onFilterChange={handleFilterChange}
+                          onSortChange={handleSortChange}
+                        />
+                      ) : account.name}
+                    </th>
+                  )
+                })}
+                {/* Total */}
+                <th className="text-right py-2 px-1.5 glass-text-secondary text-xs font-medium bg-blue-100/80 dark:bg-blue-900/30">
+                  {getColumnConfig('total') && (
+                    <TableHeaderFilterSort
+                      column={getColumnConfig('total')!}
+                      projections={legacyFilteredProjections}
+                      currentFilter={columnFilters.get('total') ?? null}
+                      currentSort={getSortRule(sortState, 'total')}
+                      onFilterChange={handleFilterChange}
+                      onSortChange={handleSortChange}
+                    />
+                  )}
+                </th>
+                {/* Bills Remaining */}
+                <th className="text-right py-2 px-1.5 glass-text-secondary text-xs font-medium bg-blue-100/80 dark:bg-blue-900/30">
+                  {getColumnConfig('bills_remaining') && (
+                    <TableHeaderFilterSort
+                      column={getColumnConfig('bills_remaining')!}
+                      projections={legacyFilteredProjections}
+                      currentFilter={columnFilters.get('bills_remaining') ?? null}
+                      currentSort={getSortRule(sortState, 'bills_remaining')}
+                      onFilterChange={handleFilterChange}
+                      onSortChange={handleSortChange}
+                    />
+                  )}
+                </th>
+                {/* Cash Available */}
+                <th className="text-right py-2 px-1.5 glass-text-secondary text-xs font-medium bg-blue-100/80 dark:bg-blue-900/30">
+                  {getColumnConfig('cash_available') && (
+                    <TableHeaderFilterSort
+                      column={getColumnConfig('cash_available')!}
+                      projections={legacyFilteredProjections}
+                      currentFilter={columnFilters.get('cash_available') ?? null}
+                      currentSort={getSortRule(sortState, 'cash_available')}
+                      onFilterChange={handleFilterChange}
+                      onSortChange={handleSortChange}
+                    />
+                  )}
+                </th>
+                {/* Cash per Week */}
+                <th className="text-right py-2 px-1.5 glass-text-secondary text-xs font-medium bg-blue-100/80 dark:bg-blue-900/30">
+                  {getColumnConfig('cash_per_week') && (
+                    <TableHeaderFilterSort
+                      column={getColumnConfig('cash_per_week')!}
+                      projections={legacyFilteredProjections}
+                      currentFilter={columnFilters.get('cash_per_week') ?? null}
+                      currentSort={getSortRule(sortState, 'cash_per_week')}
+                      onFilterChange={handleFilterChange}
+                      onSortChange={handleSortChange}
+                    />
+                  )}
+                </th>
+                {/* Non-sortable columns */}
+                <th className="text-right py-2 px-1.5 glass-text-secondary text-xs font-medium bg-white/95 dark:bg-slate-900/95">
+                  Left Over (450/wk)
+                </th>
+                <th className="text-right py-2 px-1.5 glass-text-secondary text-xs font-medium bg-white/95 dark:bg-slate-900/95">
+                  Min Needed
+                </th>
+                {/* Spending per Day */}
+                <th className="text-right py-2 px-1.5 glass-text-secondary text-xs font-medium bg-white/95 dark:bg-slate-900/95">
+                  {getColumnConfig('spending_per_day') && (
+                    <TableHeaderFilterSort
+                      column={getColumnConfig('spending_per_day')!}
+                      projections={legacyFilteredProjections}
+                      currentFilter={columnFilters.get('spending_per_day') ?? null}
+                      currentSort={getSortRule(sortState, 'spending_per_day')}
+                      onFilterChange={handleFilterChange}
+                      onSortChange={handleSortChange}
+                    />
+                  )}
+                </th>
+                {/* Notes */}
+                <th className="text-left py-2 px-1.5 glass-text-secondary text-xs font-medium bg-white/95 dark:bg-slate-900/95">
+                  {getColumnConfig('notes') && (
+                    <TableHeaderFilterSort
+                      column={getColumnConfig('notes')!}
+                      projections={legacyFilteredProjections}
+                      currentFilter={columnFilters.get('notes') ?? null}
+                      currentSort={getSortRule(sortState, 'notes')}
+                      onFilterChange={handleFilterChange}
+                      onSortChange={handleSortChange}
+                    />
+                  )}
+                </th>
+                <th className="text-center py-2 px-1.5 glass-text-secondary text-xs font-medium w-10 bg-white/95 dark:bg-slate-900/95">Delete</th>
+              </tr>
+            </thead>
+            <tbody>
                     {groupedProjections.map((group) => (
                       <React.Fragment key={group.yearMonth}>
                         {/* Month/Year Header Row */}
@@ -1108,13 +1049,9 @@ export default function HistoricalSpendTrackingTab({
                         </td>
                         <td className="py-1.5 px-1.5 text-center text-xs glass-text-secondary">—</td>
                       </tr>
-                    </tfoot>
-                  )}
-                </table>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+            </tfoot>
+          )}
+          </table>
         </div>
       )}
 

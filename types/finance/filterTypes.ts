@@ -490,3 +490,126 @@ export function createAccountColumnConfig(
     align: 'right',
   }
 }
+
+// =============================================================================
+// SERIALIZATION (for persistence)
+// =============================================================================
+
+/**
+ * Serializable version of ValueFilter (uses array instead of Set)
+ */
+export interface SerializableValueFilter {
+  type: 'value'
+  values: string[]
+  includeBlanks: boolean
+}
+
+/**
+ * Serializable version of TextFilter (same structure, just for clarity)
+ */
+export interface SerializableTextFilter {
+  type: 'text'
+  operator: TextFilterOperator
+  value: string
+}
+
+/**
+ * Serializable column filter
+ */
+export type SerializableColumnFilter = SerializableValueFilter | SerializableTextFilter
+
+/**
+ * Serializable filter state (uses object instead of Map)
+ */
+export type SerializableFilterState = Record<string, SerializableColumnFilter>
+
+/**
+ * Serializable sort state (same as SortState, already serializable)
+ */
+export type SerializableSortState = SortRule[]
+
+/**
+ * Complete persisted preferences for the spend tracking table
+ */
+export interface SpendTrackingPreferences {
+  columnFilters?: SerializableFilterState
+  sortState?: SerializableSortState
+  // Legacy filters
+  searchTerm?: string
+  dateFilter?: 'all' | 'last12' | 'last6' | 'last3' | 'custom'
+  customDateStart?: string
+  customDateEnd?: string
+  yearFilter?: string
+  minAmount?: string
+  maxAmount?: string
+  selectedAccounts?: string[]
+}
+
+/**
+ * Serialize a ColumnFilter to a JSON-safe format
+ */
+export function serializeColumnFilter(filter: ColumnFilter): SerializableColumnFilter {
+  if (isValueFilter(filter)) {
+    return {
+      type: 'value',
+      values: Array.from(filter.values),
+      includeBlanks: filter.includeBlanks,
+    }
+  }
+  // TextFilter is already serializable
+  return filter
+}
+
+/**
+ * Deserialize a ColumnFilter from JSON format
+ */
+export function deserializeColumnFilter(filter: SerializableColumnFilter): ColumnFilter {
+  if (filter.type === 'value') {
+    return {
+      type: 'value',
+      values: new Set(filter.values),
+      includeBlanks: filter.includeBlanks,
+    }
+  }
+  // TextFilter is already in correct format
+  return filter
+}
+
+/**
+ * Serialize FilterState (Map) to JSON-safe format (object)
+ */
+export function serializeFilterState(filters: FilterState): SerializableFilterState {
+  const result: SerializableFilterState = {}
+  for (const [field, filter] of filters) {
+    result[field] = serializeColumnFilter(filter)
+  }
+  return result
+}
+
+/**
+ * Deserialize FilterState from JSON format
+ */
+export function deserializeFilterState(data: SerializableFilterState | null | undefined): FilterState {
+  if (!data) return createEmptyFilterState()
+  
+  const result: FilterState = new Map()
+  for (const [field, filter] of Object.entries(data)) {
+    result.set(field as ColumnField, deserializeColumnFilter(filter))
+  }
+  return result
+}
+
+/**
+ * Serialize SortState (already JSON-safe, but for consistency)
+ */
+export function serializeSortState(sortState: SortState): SerializableSortState {
+  return sortState
+}
+
+/**
+ * Deserialize SortState from JSON format
+ */
+export function deserializeSortState(data: SerializableSortState | null | undefined): SortState {
+  if (!data || !Array.isArray(data)) return createEmptySortState()
+  return data
+}
