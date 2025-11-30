@@ -24,7 +24,13 @@ import { ListChecks, XIcon, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { ConversationSummary } from '@/lib/types';
 
-export function Sidebar({ defaultCollapsed = true }: { defaultCollapsed?: boolean } = {}) {
+export function Sidebar({ 
+  defaultCollapsed = true,
+  onConversationSelect
+}: { 
+  defaultCollapsed?: boolean;
+  onConversationSelect?: () => void;
+} = {}) {
   const router = useRouter();
   const {
     conversationList,
@@ -100,21 +106,31 @@ export function Sidebar({ defaultCollapsed = true }: { defaultCollapsed?: boolea
 
   // --- Action Handlers ---
   const handleCreateCloudChat = useCallback(() => { 
-    actions.createNewConversation('cloud', true); 
-    //setCollapsed(false); 
-  }, [actions]);
+    actions.createNewConversation('cloud', true);
+    // Close mobile sidebar if callback provided (mobile only)
+    if (onConversationSelect) {
+      onConversationSelect();
+    }
+  }, [actions, onConversationSelect]);
 
   const handleCreateLocalChat = useCallback(() => { 
-    actions.createNewConversation('local', true); 
-    //setCollapsed(false); 
-  }, [actions]);
+    actions.createNewConversation('local', true);
+    // Close mobile sidebar if callback provided (mobile only)
+    if (onConversationSelect) {
+      onConversationSelect();
+    }
+  }, [actions, onConversationSelect]);
 
   const handleSelect = useCallback((id: string, isLocal: boolean) => { 
     if (id !== activeConversationId && renamingId !== id) { 
       actions.selectConversation(id, isLocal); 
-      setRenamingId(null); 
+      setRenamingId(null);
+      // Close mobile sidebar if callback provided (mobile only)
+      if (onConversationSelect) {
+        onConversationSelect();
+      }
     } 
-  }, [actions, activeConversationId, renamingId]);
+  }, [actions, activeConversationId, renamingId, onConversationSelect]);
 
   const startRename = useCallback((conversation: ConversationSummary) => { 
     setRenamingId(conversation.id); 

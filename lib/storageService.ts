@@ -446,7 +446,7 @@ export class StorageService implements IStorageService {
           .from('conversations')
           .insert(insertData)
           .select('id, title, created_at, updated_at, user_id, model_used')
-          .single();        
+          .single();
         if (error) {
           return null;
         }

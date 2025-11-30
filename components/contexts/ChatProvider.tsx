@@ -1266,7 +1266,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
     if (!conversationId) {
 
       setState(prev => ({ ...prev, isLoadingMessages: true }));
-      const newConvSummary = await createNewConversation('local', true);
+      // Default to 'cloud' for new conversations (saves to database)
+      const newConvSummary = await createNewConversation('cloud', true);
       if (!newConvSummary || signal.aborted) {
         setState(prev => ({ ...prev, error: "Failed to auto-create conversation.", isLoadingMessages: false }));
         abortControllerRef.current = null;

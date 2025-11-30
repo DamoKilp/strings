@@ -31,7 +31,10 @@ export default function Page() {
             <SheetHeader>
               <SheetTitle className="sr-only">Conversations</SheetTitle>
             </SheetHeader>
-            <Sidebar defaultCollapsed={false} />
+            <Sidebar 
+              defaultCollapsed={false} 
+              onConversationSelect={() => setIsMobileSidebarOpen(false)}
+            />
           </SheetContent>
         </Sheet>
       )}

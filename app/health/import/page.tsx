@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Label } from '@/components/ui/label'
+import { supabase } from '@/utils/supabase/client'
 
 export default function HealthImportPage() {
   const [dragOver, setDragOver] = React.useState(false)
@@ -24,40 +25,123 @@ export default function HealthImportPage() {
     if (f) setFile(f)
   }, [])
 
+  // Validate ZIP file by checking magic bytes
+  const validateZipFile = React.useCallback(async (file: File): Promise<boolean> => {
+    const arrayBuffer = await file.slice(0, 4).arrayBuffer()
+    const bytes = new Uint8Array(arrayBuffer)
+    
+    if (bytes.length < 4) return false
+    
+    const magicBytes = [
+      bytes[0] === 0x50 && bytes[1] === 0x4B && bytes[2] === 0x03 && bytes[3] === 0x04, // PK\x03\x04
+      bytes[0] === 0x50 && bytes[1] === 0x4B && bytes[2] === 0x05 && bytes[3] === 0x06, // PK\x05\x06
+      bytes[0] === 0x50 && bytes[1] === 0x4B && bytes[2] === 0x07 && bytes[3] === 0x08, // PK\x07\x08
+    ]
+    
+    return magicBytes.some(Boolean)
+  }, [])
+
   const onUpload = React.useCallback(async () => {
     if (!file) return
+    
     setProgress(0)
-    setStatus('Uploading…')
+    setStatus('Validating file...')
     setResult(null)
+    
     try {
-      const form = new FormData()
-      form.append('file', file)
-
-      const r = await fetch('/api/health/import/upload', {
-        method: 'POST',
-        body: form,
-      })
-      if (!r.ok) {
-        let errMsg = `HTTP ${r.status}`
-        try {
-          const json = await r.json()
-          errMsg = json.error || errMsg
-        } catch {
-          const text = await r.text()
-          errMsg = text || errMsg
-        }
-        throw new Error(errMsg)
+      // Client-side validation
+      const fileName = file.name || 'upload.zip'
+      if (!fileName.toLowerCase().endsWith('.zip')) {
+        throw new Error('Only .zip uploads are supported')
       }
-      const json = await r.json()
-      setResult(json)
+
+      const maxSize = 500 * 1024 * 1024 // 500MB
+      if (file.size > maxSize) {
+        throw new Error(`File too large. Max 500MB, got ${(file.size / 1024 / 1024).toFixed(2)}MB`)
+      }
+
+      if (file.size < 22) {
+        throw new Error('File is too small to be a valid ZIP archive')
+      }
+
+      // Validate ZIP magic bytes
+      const isValidZip = await validateZipFile(file)
+      if (!isValidZip) {
+        throw new Error('Invalid ZIP file. File does not appear to be a valid ZIP archive.')
+      }
+
+      // Step 1: Get signed upload URL
+      setStatus('Preparing upload...')
+      setProgress(10)
+      
+      const urlResponse = await fetch('/api/health/import/upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName: file.name, fileSize: file.size }),
+      })
+
+      if (!urlResponse.ok) {
+        const errorData = await urlResponse.json().catch(() => ({ error: `HTTP ${urlResponse.status}` }))
+        throw new Error(errorData.error || 'Failed to get upload URL')
+      }
+
+      const { signedUrl, token, objectKey } = await urlResponse.json()
+      
+      if (!signedUrl || !token || !objectKey) {
+        throw new Error('Invalid response from server')
+      }
+
+      // Step 2: Upload directly to Supabase Storage
+      setStatus('Uploading to storage...')
+      setProgress(20)
+
+      // Note: Supabase uploadToSignedUrl doesn't support progress callbacks
+      // We'll simulate progress based on file size and upload time
+      const uploadStartTime = Date.now()
+      const progressInterval = setInterval(() => {
+        const elapsed = Date.now() - uploadStartTime
+        // Estimate: assume 10MB/s upload speed, cap at 90%
+        const estimatedProgress = Math.min(20 + (elapsed / 1000) * 5, 90)
+        setProgress(Math.round(estimatedProgress))
+      }, 500)
+
+      const { error: uploadError } = await supabase.storage
+        .from('imports')
+        .uploadToSignedUrl(objectKey, token, file)
+
+      clearInterval(progressInterval)
+
+      if (uploadError) {
+        throw new Error(`Upload failed: ${uploadError.message}`)
+      }
+
+      // Step 3: Register import job
+      setStatus('Registering import job...')
+      setProgress(90)
+
+      const registerResponse = await fetch('/api/health/import/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ objectKey }),
+      })
+
+      if (!registerResponse.ok) {
+        const errorData = await registerResponse.json().catch(() => ({ error: `HTTP ${registerResponse.status}` }))
+        throw new Error(errorData.error || 'Failed to register import job')
+      }
+
+      const registerData = await registerResponse.json()
+      
+      setResult(registerData)
       setStatus('Uploaded. Import job queued.')
       setProgress(100)
     } catch (e: unknown) {
       const err = e as Error
       console.error('Upload error:', err)
       setStatus(err?.message || 'Upload failed')
+      setProgress(0)
     }
-  }, [file])
+  }, [file, validateZipFile])
 
   return (
     <div className="container mx-auto py-8">
