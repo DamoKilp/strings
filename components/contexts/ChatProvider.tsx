@@ -530,12 +530,21 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
       // Call both storage and setState for immediate UI update
       await storageService.updateConversationTitle(conversationId, safeTitle, userId, isLocal);
-      setState(prev => ({
-        ...prev,
-        conversationList: prev.conversationList.map(c =>
+      setState(prev => {
+        // Update the conversation and re-sort by updatedAt descending (newest first)
+        const updatedList = prev.conversationList.map(c =>
           c.id === conversationId ? { ...c, title: safeTitle, updatedAt: new Date() } : c
-        ),
-      }));
+        );
+        const sortedList = updatedList.sort((a, b) => {
+          const aTime = a.updatedAt instanceof Date ? a.updatedAt.getTime() : new Date(a.updatedAt).getTime();
+          const bTime = b.updatedAt instanceof Date ? b.updatedAt.getTime() : new Date(b.updatedAt).getTime();
+          return bTime - aTime; // Descending order (newest first)
+        });
+        return {
+          ...prev,
+          conversationList: sortedList,
+        };
+      });
     },
     [state.conversationList]
   );
@@ -865,13 +874,19 @@ export function ChatProvider({ children }: ChatProviderProps) {
       return;
     }
     setState(prev => {
+      // Update the conversation and re-sort by updatedAt descending (newest first)
       const updatedList = prev.conversationList.map(conv => {
         if (conv.id === id) {
           return { ...conv, title: newTitle, updatedAt: new Date() };
         }
         return conv;
       });
-      return { ...prev, conversationList: updatedList };
+      const sortedList = updatedList.sort((a, b) => {
+        const aTime = a.updatedAt instanceof Date ? a.updatedAt.getTime() : new Date(a.updatedAt).getTime();
+        const bTime = b.updatedAt instanceof Date ? b.updatedAt.getTime() : new Date(b.updatedAt).getTime();
+        return bTime - aTime; // Descending order (newest first)
+      });
+      return { ...prev, conversationList: sortedList };
     });
     try {
       const conversation = state.conversationList.find(conv => conv.id === id);
@@ -1897,10 +1912,16 @@ export function ChatProvider({ children }: ChatProviderProps) {
       setState(prev => {
         const currentIds = new Set(prev.conversationList.map(c => c.id));
         const uniqueNewItems = newRemoteItems.filter(item => !currentIds.has(item.id));
-        const updatedList = [...prev.conversationList, ...uniqueNewItems];
+        // Merge and sort by updatedAt descending (newest first)
+        const mergedList = [...prev.conversationList, ...uniqueNewItems];
+        const sortedList = mergedList.sort((a, b) => {
+          const aTime = a.updatedAt instanceof Date ? a.updatedAt.getTime() : new Date(a.updatedAt).getTime();
+          const bTime = b.updatedAt instanceof Date ? b.updatedAt.getTime() : new Date(b.updatedAt).getTime();
+          return bTime - aTime; // Descending order (newest first)
+        });
         return {
           ...prev,
-          conversationList: updatedList,
+          conversationList: sortedList,
           conversationCursor: newNextCursor,
           hasMoreConversations: !!newNextCursor,
           isLoadingMoreConversations: false,

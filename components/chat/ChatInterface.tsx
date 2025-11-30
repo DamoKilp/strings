@@ -31,7 +31,7 @@ import { prePrompts } from '@/components/data/prePrompts';
 // --- ADDED: Import useVirtualizer hook for virtualization ---
 import { useVirtualizer } from '@tanstack/react-virtual';
 import EmptyChatWelcome from '@/components/chat/EmptyChatWelcome';
-import { RoutinesBar } from '@/components/chat/RoutinesBar';
+// import { RoutinesBar } from '@/components/chat/RoutinesBar'; // Removed - tiles block chat bubbles
 import { HabitTrackerDialog } from '@/components/chat/HabitTrackerDialog';
 import AgentManagerDialog from '@/components/chat/AgentManagerDialog';
 import { toast } from 'sonner';
@@ -795,10 +795,10 @@ export function ChatInterface() {
       }`}
       key={activeConversationId || 'new-chat-interface'} // Force re-render on conversation change
     >
-      {/** Reduce reserved bottom space when there are no messages to make the welcome fit better */}
-      <div className="px-2 sm:px-4 pt-2">
+      {/** RoutinesBar removed during chat to prevent blocking chat bubbles */}
+      {/* <div className="px-2 sm:px-4 pt-2">
         {sortedMessages.length > 0 && <RoutinesBar onStartDriveMode={handleDriveModeToggle} />}
-      </div>
+      </div> */}
       {/* Main Content Area (Messages + Code Panel) */}
       <div className="flex-1 overflow-hidden relative bg-transparent">
         <ResizableSplitView

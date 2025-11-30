@@ -5,7 +5,7 @@ import { ChatInterface } from '@/components/chat/ChatInterface'
 import { Sidebar } from '@/components/sidebarComponents/Sidebar'
 import { ChatLayoutOffsets } from '@/components/chat/ChatLayoutOffsets'
 import { Menu } from 'lucide-react'
-import { Sheet, SheetContent } from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { useIsMobile } from '@/app/hooks/use-mobile'
 
 export default function Page() {
@@ -27,6 +27,10 @@ export default function Page() {
       {isMobile && (
         <Sheet open={isMobileSidebarOpen} onOpenChange={setIsMobileSidebarOpen}>
           <SheetContent side="left" className="w-[280px] p-0">
+            {/* Hidden title for accessibility (Radix Dialog requirement) */}
+            <SheetHeader>
+              <SheetTitle className="sr-only">Conversations</SheetTitle>
+            </SheetHeader>
             <Sidebar defaultCollapsed={false} />
           </SheetContent>
         </Sheet>

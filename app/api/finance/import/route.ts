@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
 import { bulkInsertProjections, getAccounts, type FinanceProjection, type FinanceAccount } from '@/app/actions/finance'
 
 export const maxDuration = 60 // 60 seconds for large file uploads
@@ -88,7 +88,7 @@ function mapAccountColumns(
  * Parse Excel/CSV file and extract financial projections
  */
 function parseFinancialData(
-  workbook: XLSX.WorkBook,
+  workbook: ExcelJS.Workbook,
   accounts: FinanceAccount[]
 ): { 
   rows: ParsedRow[]
@@ -107,19 +107,32 @@ function parseFinancialData(
   }
 } {
   const rows: ParsedRow[] = []
-  const sheetName = workbook.SheetNames[0]
-  const worksheet = workbook.Sheets[sheetName]
+  const worksheet = workbook.worksheets[0]
   
   if (!worksheet) {
     return { rows: [], summary: { totalRows: 0, validRows: 0, skippedRows: 0, columnsFound: { daysRemaining: false, year: false, month: false, billsRemaining: false, notes: false, accountColumns: 0 } } }
   }
   
-  // Convert to JSON with header row
-  const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
-    header: 1,
-    defval: null,
-    raw: false 
-  }) as unknown[][]
+  // Convert worksheet to array of arrays
+  const jsonData: unknown[][] = []
+  worksheet.eachRow((row, rowNumber) => {
+    const rowData: unknown[] = []
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      // Get cell value, handling different types
+      let value: unknown = null
+      if (cell.value !== null && cell.value !== undefined) {
+        if (typeof cell.value === 'object' && 'text' in cell.value) {
+          value = (cell.value as { text: string }).text
+        } else if (typeof cell.value === 'object' && 'result' in cell.value) {
+          value = (cell.value as { result: unknown }).result
+        } else {
+          value = cell.value
+        }
+      }
+      rowData[colNumber - 1] = value // ExcelJS is 1-indexed
+    })
+    jsonData.push(rowData)
+  })
   
   if (jsonData.length < 2) {
     return { rows: [], summary: { totalRows: 0, validRows: 0, skippedRows: 0, columnsFound: { daysRemaining: false, year: false, month: false, billsRemaining: false, notes: false, accountColumns: 0 } } }
@@ -395,7 +408,8 @@ export async function POST(req: NextRequest) {
     
     // Read file
     const arrayBuffer = await file.arrayBuffer()
-    const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(arrayBuffer)
     
     // Get accounts for mapping
     const accountsResult = await getAccounts()

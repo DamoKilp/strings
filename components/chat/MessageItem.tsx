@@ -443,7 +443,7 @@ export const MessageItem = React.memo(({
           )}
         </div>
       )}
-      <div className={`message-bubble ${isAssistant && isStreaming ? 'fade-in-up' : ''} backdrop-blur-sm max-w-[78%] sm:max-w-[85%] md:max-w-[90%] px-3 md:px-4 py-2.5 md:py-3 transition-all duration-200 hover:shadow-xl ${bubbleClasses}`}>
+      <div className={`message-bubble ${isAssistant && isStreaming ? 'fade-in-up' : ''} backdrop-blur-sm max-w-[99%] sm:max-w-[85%] md:max-w-[90%] px-3 md:px-4 py-2.5 md:py-3 transition-all duration-200 hover:shadow-xl ${bubbleClasses}`}>
         <div className="flex items-center justify-between glass-text-caption-1 mb-2 gap-2 flex-wrap">
           <span className="glass-text-caption-1 glass-weight-semibold capitalize flex items-center">
             {role === 'assistant' ? 'Assistant' : role === 'user' ? 'You' : role}

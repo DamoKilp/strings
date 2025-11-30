@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
 import { getAccounts } from '@/app/actions/finance'
 
 export async function GET(req: NextRequest) {
@@ -23,7 +23,8 @@ export async function GET(req: NextRequest) {
     const accounts = accountsResult.data
     
     // Create workbook
-    const workbook = XLSX.utils.book_new()
+    const workbook = new ExcelJS.Workbook()
+    const worksheet = workbook.addWorksheet('Financial Data')
     
     const currentYear = new Date().getFullYear()
     
@@ -80,57 +81,39 @@ export async function GET(req: NextRequest) {
       ]
     ]
     
-    // Combine all rows: instructions, blank row, instruction details, blank row, headers, sample rows
-    const data = [
-      instructions,
-      instructionDetails,
-      [], // Blank row
-      headers,
-      ...sampleRows
-    ]
-    
-    // Create worksheet
-    const worksheet = XLSX.utils.aoa_to_sheet(data)
+    // Add all rows: instructions, instruction details, blank row, headers, sample rows
+    worksheet.addRow(instructions)
+    worksheet.addRow(instructionDetails)
+    worksheet.addRow([]) // Blank row
+    worksheet.addRow(headers)
+    sampleRows.forEach(row => worksheet.addRow(row))
     
     // Set column widths for better readability
-    const colWidths = [
-      { wch: 15 },  // Days Remaining
-      { wch: 10 },  // Year
-      { wch: 12 },  // Month
-      ...accounts.map(() => ({ wch: 15 })), // Account columns
-      { wch: 25 },  // Bills Remaining
-      { wch: 30 }   // Notes
-    ]
-    worksheet['!cols'] = colWidths
+    worksheet.getColumn(1).width = 15  // Days Remaining
+    worksheet.getColumn(2).width = 10  // Year
+    worksheet.getColumn(3).width = 12  // Month
+    accounts.forEach((_, idx) => {
+      worksheet.getColumn(4 + idx).width = 15 // Account columns
+    })
+    worksheet.getColumn(4 + accounts.length).width = 25  // Bills Remaining
+    worksheet.getColumn(5 + accounts.length).width = 30  // Notes
     
-    // Style header row (row 4, 0-indexed = 3)
-    const headerRowIndex = 3
-    const headerRange = XLSX.utils.decode_range(worksheet['!ref'] || 'A1')
-    for (let col = headerRange.s.c; col <= headerRange.e.c; col++) {
-      const cellAddress = XLSX.utils.encode_cell({ r: headerRowIndex, c: col })
-      if (!worksheet[cellAddress]) continue
-      worksheet[cellAddress].s = {
-        font: { bold: true },
-        fill: { fgColor: { rgb: 'E0E0E0' } }
-      }
+    // Style header row (row 4, 1-indexed = 4)
+    const headerRow = worksheet.getRow(4)
+    headerRow.font = { bold: true }
+    headerRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE0E0E0' }
     }
     
-    // Style instructions row (row 1, 0-indexed = 0)
-    const instructionCell = XLSX.utils.encode_cell({ r: 0, c: 0 })
-    if (worksheet[instructionCell]) {
-      worksheet[instructionCell].s = {
-        font: { bold: true, sz: 12 }
-      }
-    }
-    
-    // Add worksheet to workbook
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Financial Data')
+    // Style instructions row (row 1, 1-indexed = 1)
+    const instructionRow = worksheet.getRow(1)
+    const instructionCell = instructionRow.getCell(1)
+    instructionCell.font = { bold: true, size: 12 }
     
     // Generate Excel file buffer
-    const excelBuffer = XLSX.write(workbook, { 
-      type: 'buffer', 
-      bookType: 'xlsx' 
-    })
+    const excelBuffer = await workbook.xlsx.writeBuffer()
     
     // Return file as download
     return new NextResponse(excelBuffer, {

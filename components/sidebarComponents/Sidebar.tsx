@@ -58,13 +58,21 @@ export function Sidebar({ defaultCollapsed = true }: { defaultCollapsed?: boolea
   const EXPANDED_WIDTH = 252;
   const COLLAPSED_WIDTH = 48;
 
-  // Filtered conversations based on search
-  // IMPORTANT: Apply search filter *after* fetching/appending data
+  // Filtered and sorted conversations
+  // IMPORTANT: Always sort by updatedAt (newest first), no grouping by type
   const filteredConversations = useMemo(() => {
+      // First, ensure all conversations are sorted by updatedAt descending (newest first)
+      const sorted = [...conversationList].sort((a, b) => {
+        const aTime = a.updatedAt instanceof Date ? a.updatedAt.getTime() : new Date(a.updatedAt).getTime();
+        const bTime = b.updatedAt instanceof Date ? b.updatedAt.getTime() : new Date(b.updatedAt).getTime();
+        return bTime - aTime; // Descending order (newest first)
+      });
+      
+      // Then apply search filter if needed
       if (!searchQuery.trim()) {
-          return conversationList; // Return original list if no search
+          return sorted; // Return sorted list if no search
       }
-      return conversationList.filter(convo =>
+      return sorted.filter(convo =>
           (convo.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
            (convo.summary || '').toLowerCase().includes(searchQuery.toLowerCase()) || // Check summary
            (convo.firstMessagePreview || '').toLowerCase().includes(searchQuery.toLowerCase())) // Check preview
