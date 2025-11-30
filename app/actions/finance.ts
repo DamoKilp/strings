@@ -755,6 +755,7 @@ export async function saveSpendTrackingColumnOrder(columnOrder: string[]): Promi
 export interface SpendTrackingFilterPreferences {
   columnFilters?: Record<string, unknown>
   sortState?: Array<{ field: string; direction: 'asc' | 'desc'; priority: number }>
+  sortMode?: 'global' | 'monthly'
   searchTerm?: string
   dateFilter?: 'all' | 'last12' | 'last6' | 'last3' | 'custom'
   customDateStart?: string

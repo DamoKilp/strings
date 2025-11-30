@@ -1,7 +1,6 @@
 'use client'
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { 
   getAllProjections, 
@@ -93,10 +92,14 @@ export default function HistoricalSpendTrackingTab({
   // New filter/sort state
   const [columnFilters, setColumnFilters] = useState<FilterState>(() => createEmptyFilterState())
   const [sortState, setSortState] = useState<SortState>(() => createEmptySortState())
+  const [sortMode, setSortMode] = useState<'global' | 'monthly'>('monthly') // 'global' = sort all data, 'monthly' = sort within each month
   
   // Preferences persistence
   const [preferencesLoaded, setPreferencesLoaded] = useState(false)
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  
+  // Ref for height constraint
+  const outerContainerRef = useRef<HTMLDivElement>(null)
   
   // Load saved preferences on mount
   useEffect(() => {
@@ -114,6 +117,11 @@ export default function HistoricalSpendTrackingTab({
           // Restore sort state
           if (prefs.sortState) {
             setSortState(deserializeSortState(prefs.sortState as SerializableSortState))
+          }
+          
+          // Restore sort mode
+          if (prefs.sortMode) {
+            setSortMode(prefs.sortMode)
           }
           
           // Restore legacy filters
@@ -154,6 +162,7 @@ export default function HistoricalSpendTrackingTab({
         await saveSpendTrackingFilterPreferences({
           columnFilters: serializeFilterState(columnFilters),
           sortState: serializeSortState(sortState),
+          sortMode,
           searchTerm,
           dateFilter,
           customDateStart,
@@ -178,6 +187,7 @@ export default function HistoricalSpendTrackingTab({
     preferencesLoaded,
     columnFilters,
     sortState,
+    sortMode,
     searchTerm,
     dateFilter,
     customDateStart,
@@ -369,11 +379,23 @@ export default function HistoricalSpendTrackingTab({
     return result
   }, [legacyFilteredProjections, columnFilters, sortState])
 
+  // Apply filters (without sorting) for monthly mode
+  const filteredProjections = useMemo(() => {
+    let result = legacyFilteredProjections
+    result = applyAllFilters(result, columnFilters)
+    return result
+  }, [legacyFilteredProjections, columnFilters])
+
   // Group projections by year/month
   const groupedProjections = useMemo<GroupedProjection[]>(() => {
     const groups = new Map<string, GroupedProjection>()
     
-    filteredAndSortedProjections.forEach(projection => {
+    // Use filtered data (with or without sorting depending on mode)
+    const projectionsToGroup = sortMode === 'global' 
+      ? filteredAndSortedProjections // Already sorted globally
+      : filteredProjections // Filtered but not sorted yet
+    
+    projectionsToGroup.forEach(projection => {
       const date = new Date(projection.projection_date)
       const year = date.getFullYear()
       const month = date.getMonth() + 1
@@ -385,11 +407,31 @@ export default function HistoricalSpendTrackingTab({
       groups.get(yearMonth)!.projections.push(projection)
     })
     
-    return Array.from(groups.values()).sort((a, b) => {
+    // Sort groups by year/month (newest first)
+    const sortedGroups = Array.from(groups.values()).sort((a, b) => {
       if (a.year !== b.year) return b.year - a.year
       return b.month - a.month
     })
-  }, [filteredAndSortedProjections])
+    
+    // If monthly sort mode, sort within each group
+    if (sortMode === 'monthly') {
+      if (sortState.length > 0) {
+        sortedGroups.forEach(group => {
+          group.projections = applyCascadingSort(group.projections, sortState)
+        })
+      } else {
+        // Default sort by date descending within each month
+        sortedGroups.forEach(group => {
+          group.projections.sort((a, b) => 
+            new Date(b.projection_date).getTime() - new Date(a.projection_date).getTime()
+          )
+        })
+      }
+    }
+    // If global mode, projections are already sorted in filteredAndSortedProjections
+    
+    return sortedGroups
+  }, [filteredAndSortedProjections, filteredProjections, sortMode, sortState])
 
   // Calculate summary statistics for filtered projections
   const summaryStats = useMemo(() => {
@@ -550,81 +592,147 @@ export default function HistoricalSpendTrackingTab({
     return columnConfigs.find(c => c.field === field)
   }, [columnConfigs])
 
+  // Constrain height to viewport, accounting for any parent padding/margins
+  useEffect(() => {
+    const constrainHeight = () => {
+      if (outerContainerRef.current) {
+        const outer = outerContainerRef.current
+        const parent = outer.parentElement
+        if (parent) {
+          // Get the parent's position relative to viewport
+          const parentRect = parent.getBoundingClientRect()
+          const viewportHeight = window.innerHeight
+          
+          // Calculate available height: viewport height minus parent's top offset
+          // This accounts for any headers, padding, etc. above the parent
+          const availableHeight = viewportHeight - parentRect.top
+          
+          // Use available viewport space, but ensure minimum of 400px
+          const maxHeight = Math.max(availableHeight - 20, 400) // -20 for some padding
+          
+          outer.style.height = `${maxHeight}px`
+          outer.style.maxHeight = `${maxHeight}px`
+        }
+      }
+    }
+
+    constrainHeight()
+    window.addEventListener('resize', constrainHeight)
+    
+    // Also constrain after a short delay to catch layout shifts
+    const timeout = setTimeout(constrainHeight, 100)
+    
+    return () => {
+      window.removeEventListener('resize', constrainHeight)
+      clearTimeout(timeout)
+    }
+  }, [])
+
   return (
-    <div className="space-y-2 h-full flex flex-col">
-      {/* Header with Import/Export Buttons */}
-      <div className="flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <h2 className="glass-text-primary text-lg font-semibold">Historical Spend Tracking</h2>
-          {/* Filter/Sort Status */}
-          <div className="flex items-center gap-2">
-            {activeColumnFilterCount > 0 && (
+    <div 
+      ref={outerContainerRef}
+      className="h-full flex flex-col overflow-hidden"
+    >
+      {/* Container for Header, Table, and Footer */}
+      <div 
+        className="glass-large rounded-lg h-full max-h-full flex flex-col overflow-hidden"
+      >
+        {/* Header with Import/Export Buttons */}
+        <div className="flex items-center justify-between shrink-0 p-4 border-b border-white/10 dark:border-white/10">
+          <div className="flex items-center gap-3">
+            <h2 className="glass-text-primary text-lg font-semibold">Historical Spend Tracking</h2>
+            {/* Filter/Sort Status */}
+            <div className="flex items-center gap-2">
+              {activeColumnFilterCount > 0 && (
+                <button
+                  onClick={() => setColumnFilters(createEmptyFilterState())}
+                  className="text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded hover:bg-amber-500/30 transition-colors"
+                >
+                  {activeColumnFilterCount} filter{activeColumnFilterCount > 1 ? 's' : ''} ✕
+                </button>
+              )}
+              {sortState.length > 0 && (
+                <button
+                  onClick={() => setSortState(createEmptySortState())}
+                  className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded hover:bg-blue-500/30 transition-colors"
+                >
+                  {sortState.length} sort{sortState.length > 1 ? 's' : ''} ✕
+                </button>
+              )}
+              {/* Sort Mode Toggle */}
               <button
-                onClick={() => setColumnFilters(createEmptyFilterState())}
-                className="text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded hover:bg-amber-500/30 transition-colors"
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setSortMode(prev => prev === 'global' ? 'monthly' : 'global')
+                }}
+                className={`text-xs px-2 py-0.5 rounded transition-all cursor-pointer ${
+                  sortMode === 'global' 
+                    ? 'bg-purple-500/30 text-purple-300 border border-purple-400/50 font-medium' 
+                    : 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30'
+                }`}
+                title={
+                  sortMode === 'global' 
+                    ? 'Sorting globally across all data. Click to sort within each month. Apply a column sort to see the difference!' 
+                    : 'Sorting within each month. Click to sort globally across all data. Apply a column sort to see the difference!'
+                }
               >
-                {activeColumnFilterCount} filter{activeColumnFilterCount > 1 ? 's' : ''} ✕
+                <span className="inline-flex items-center gap-1">
+                  {sortMode === 'global' ? '🌐 Global' : '📅 Monthly'}
+                  {sortState.length === 0 && (
+                    <span className="text-[10px] opacity-60" title="Apply a column sort to see the difference between modes">
+                      ⚠️
+                    </span>
+                  )}
+                </span>
               </button>
-            )}
-            {sortState.length > 0 && (
-              <button
-                onClick={() => setSortState(createEmptySortState())}
-                className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded hover:bg-blue-500/30 transition-colors"
-              >
-                {sortState.length} sort{sortState.length > 1 ? 's' : ''} ✕
-              </button>
-            )}
-            <span className="text-xs glass-text-secondary">
-              {filteredAndSortedProjections.length} of {projections.length} rows
-            </span>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => {
+                const link = document.createElement('a')
+                link.href = '/api/finance/import/template'
+                link.download = 'finance-import-template.xlsx'
+                document.body.appendChild(link)
+                link.click()
+                document.body.removeChild(link)
+                toast.success('Template download started')
+              }}
+              variant="outline"
+              className="glass-small"
+              size="sm"
+            >
+              📥 Download Template
+            </Button>
+            <Button
+              onClick={() => setIsImportDialogOpen(true)}
+              className="glass-small"
+              size="sm"
+            >
+              Import from Excel
+            </Button>
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button
-            onClick={() => {
-              const link = document.createElement('a')
-              link.href = '/api/finance/import/template'
-              link.download = 'finance-import-template.xlsx'
-              document.body.appendChild(link)
-              link.click()
-              document.body.removeChild(link)
-              toast.success('Template download started')
-            }}
-            variant="outline"
-            className="glass-small"
-            size="sm"
-          >
-            📥 Download Template
-          </Button>
-          <Button
-            onClick={() => setIsImportDialogOpen(true)}
-            className="glass-small"
-            size="sm"
-          >
-            Import from Excel
-          </Button>
-        </div>
-      </div>
 
-      {/* Table */}
-      {isLoading ? (
-        <Card className="glass-large">
-          <CardContent className="py-8 text-center">
+        {/* Table */}
+        {isLoading ? (
+          <div className="flex-1 flex items-center justify-center py-8">
             <p className="glass-text-secondary">Loading historical projections...</p>
-          </CardContent>
-        </Card>
-      ) : filteredAndSortedProjections.length === 0 ? (
-        <Card className="glass-large">
-          <CardContent className="py-8 text-center">
+          </div>
+        ) : filteredAndSortedProjections.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center py-8">
             <p className="glass-text-secondary">
               {projections.length === 0 
                 ? 'No historical projections found. Start tracking your spending to see data here.' 
                 : 'No projections match your filters.'}
             </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="flex-1 min-h-0 overflow-auto glass-large rounded-lg">
+          </div>
+        ) : (
+          <div 
+            className="flex-1 min-h-0 overflow-auto"
+          >
           <table className="w-full text-xs min-w-[800px]">
             <thead className="sticky top-0 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm">
               <tr className="border-b border-white/10 dark:border-white/10">
@@ -789,7 +897,7 @@ export default function HistoricalSpendTrackingTab({
             </thead>
             <tbody>
                     {groupedProjections.map((group) => (
-                      <React.Fragment key={group.yearMonth}>
+                      <React.Fragment key={`${group.yearMonth}-${sortMode}-${sortState.length > 0 ? sortState.map(s => `${s.field}-${s.direction}`).join('-') : 'default'}`}>
                         {/* Month/Year Header Row */}
                         <tr className="bg-white/10 dark:bg-white/5 border-b border-white/20 dark:border-white/10">
                           <td 
@@ -1053,7 +1161,17 @@ export default function HistoricalSpendTrackingTab({
           )}
           </table>
         </div>
-      )}
+        )}
+
+        {/* Footer with Item Count */}
+        <div className="shrink-0 px-4 py-2 border-t border-white/10 dark:border-white/10 bg-white/5 dark:bg-white/5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs glass-text-secondary">
+              Showing <span className="font-medium glass-text-primary">{filteredAndSortedProjections.length}</span> of <span className="font-medium glass-text-primary">{projections.length}</span> items
+            </span>
+          </div>
+        </div>
+      </div>
 
       {/* Import Dialog */}
       <FinanceImportDialog

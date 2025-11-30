@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import { useTheme } from 'next-themes'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Select,
@@ -72,11 +73,19 @@ export default function ChartAnalysisTab({
   initialAccounts = [],
   initialBills = [],
 }: ChartAnalysisTabProps) {
+  const { resolvedTheme } = useTheme()
   const [projections, setProjections] = useState<FinanceProjection[]>(initialProjections)
   const [accounts, setAccounts] = useState<FinanceAccount[]>(initialAccounts)
   const [bills, setBills] = useState<FinanceBill[]>(initialBills)
   const [isLoading, setIsLoading] = useState(false)
   const [dateRange, setDateRange] = useState<'all' | 'last12' | 'last6' | 'last3'>('last6')
+  
+  // Theme-aware colors for charts
+  const isDark = resolvedTheme === 'dark'
+  const chartTextColor = isDark ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)'
+  const chartStrokeColor = isDark ? 'rgba(255, 255, 255, 0.5)' : 'rgba(0, 0, 0, 0.5)'
+  const chartGridColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)'
+  const chartLegendColor = isDark ? 'rgba(255, 255, 255, 0.8)' : 'rgba(0, 0, 0, 0.8)'
 
   // Load all historical projections
   const loadProjections = useCallback(async () => {
@@ -325,6 +334,51 @@ export default function ChartAnalysisTab({
     })
   }, [chartData, accounts])
 
+  // Calculate monthly average cash per week data
+  const monthlyCashPerWeekData = useMemo(() => {
+    const monthlyMap = new Map<string, { cashAvailable: number[]; daysRemaining: number[] }>()
+    
+    chartData.forEach(dataPoint => {
+      const date = new Date(dataPoint.fullDate)
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+      
+      if (!monthlyMap.has(monthKey)) {
+        monthlyMap.set(monthKey, { cashAvailable: [], daysRemaining: [] })
+      }
+      
+      const monthData = monthlyMap.get(monthKey)!
+      // Only include data points with valid days remaining (to avoid division by zero)
+      if (dataPoint.daysRemaining > 0 && dataPoint.cashAvailable > 0) {
+        monthData.cashAvailable.push(dataPoint.cashAvailable)
+        monthData.daysRemaining.push(dataPoint.daysRemaining)
+      }
+    })
+
+    return Array.from(monthlyMap.entries())
+      .map(([monthKey, monthData]) => {
+        const date = new Date(monthKey + '-01')
+        
+        // Calculate cash per week for each data point, then average
+        const cashPerWeekValues = monthData.cashAvailable.map((cash, index) => {
+          const daysRemaining = monthData.daysRemaining[index]
+          const weeksRemaining = daysRemaining / 7
+          return weeksRemaining > 0 ? cash / weeksRemaining : 0
+        }).filter(v => v > 0) // Filter out invalid values
+        
+        const avgCashPerWeek = cashPerWeekValues.length > 0
+          ? cashPerWeekValues.reduce((a, b) => a + b, 0) / cashPerWeekValues.length
+          : 0
+        
+        return {
+          monthKey, // Preserve for sorting
+          month: date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+          avgCashPerWeek,
+        }
+      })
+      .filter(item => item.avgCashPerWeek > 0) // Only include months with valid data
+      .sort((a, b) => a.monthKey.localeCompare(b.monthKey)) // Sort by YYYY-MM format
+  }, [chartData])
+
   // Calculate monthly comparison data
   const monthlyComparisonData = useMemo(() => {
     const monthlyMap = new Map<string, { cash: number[]; bills: number[]; count: number }>()
@@ -381,14 +435,14 @@ export default function ChartAnalysisTab({
     return tickItem
   }, [])
 
-  // Custom tooltip component
+  // Custom tooltip component - always dark mode for readability
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
-        <div className="glass-medium p-3 rounded-lg border border-white/20 shadow-lg">
-          <p className="glass-text-primary font-semibold mb-2">{label}</p>
+        <div className="bg-slate-900 dark:bg-slate-900 p-3 rounded-lg border border-slate-700 shadow-xl">
+          <p className="text-white font-semibold mb-2">{label}</p>
           {payload.map((entry: any, index: number) => (
-            <p key={index} className="glass-text-secondary text-sm" style={{ color: entry.color }}>
+            <p key={index} className="text-slate-300 text-sm" style={{ color: entry.color }}>
               {`${entry.name}: ${formatCurrency(entry.value)}`}
             </p>
           ))}
@@ -458,7 +512,7 @@ export default function ChartAnalysisTab({
                 {formatCurrency(stats.currentCash)}
               </p>
               {cashChange !== 0 && (
-                <div className={`flex items-center gap-1 text-xs ${cashChange > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                <div className={`flex items-center gap-1 text-xs ${cashChange > 0 ? 'text-[var(--glass-success-text)]' : 'text-[var(--glass-error-text)]'}`}>
                   {cashChange > 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
                   <span>{Math.abs(cashChange).toFixed(1)}%</span>
                   <span className="glass-text-tertiary">vs previous</span>
@@ -477,7 +531,7 @@ export default function ChartAnalysisTab({
                 {formatCurrency(stats.avgCashAvailable)}
               </p>
               {stats.cashTrend !== 0 && (
-                <div className={`flex items-center gap-1 text-xs ${stats.cashTrend > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                <div className={`flex items-center gap-1 text-xs ${stats.cashTrend > 0 ? 'text-[var(--glass-success-text)]' : 'text-[var(--glass-error-text)]'}`}>
                   {stats.cashTrend > 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
                   <span>{Math.abs(stats.cashTrend).toFixed(1)}%</span>
                   <span className="glass-text-tertiary">trend</span>
@@ -520,6 +574,44 @@ export default function ChartAnalysisTab({
         </div>
       )}
 
+      {/* Cash per Week Over Time - Monthly Averages */}
+      {monthlyCashPerWeekData.length > 0 && (
+        <Card className="glass-large">
+          <CardHeader>
+            <CardTitle className="glass-text-primary">Average Cash per Week by Month</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={350}>
+              <BarChart data={monthlyCashPerWeekData}>
+                <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
+                <XAxis 
+                  dataKey="month" 
+                  stroke={chartStrokeColor}
+                  tick={{ fill: chartTextColor, fontSize: 12 }}
+                  angle={-45}
+                  textAnchor="end"
+                  height={60}
+                />
+                <YAxis 
+                  stroke={chartStrokeColor}
+                  tick={{ fill: chartTextColor, fontSize: 12 }}
+                  tickFormatter={(value) => formatCurrency(value)}
+                  label={{ value: 'Cash per Week', angle: -90, position: 'insideLeft', style: { textAnchor: 'middle', fill: chartTextColor } }}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend wrapperStyle={{ color: chartLegendColor }} />
+                <Bar 
+                  dataKey="avgCashPerWeek" 
+                  fill={CHART_COLORS.primary} 
+                  name="Average Cash per Week"
+                  radius={[4, 4, 0, 0]}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Cash Flow Over Time - Enhanced */}
       <Card className="glass-large">
         <CardHeader>
@@ -538,11 +630,11 @@ export default function ChartAnalysisTab({
                   <stop offset="95%" stopColor={CHART_COLORS.secondary} stopOpacity={0}/>
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+              <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
               <XAxis 
                 dataKey="date" 
-                stroke="rgba(255,255,255,0.5)"
-                tick={{ fill: 'rgba(255,255,255,0.7)', fontSize: 12 }}
+                stroke={chartStrokeColor}
+                tick={{ fill: chartTextColor, fontSize: 12 }}
                 tickFormatter={formatDateTick}
                 angle={-45}
                 textAnchor="end"
@@ -550,12 +642,12 @@ export default function ChartAnalysisTab({
                 type="category"
               />
               <YAxis 
-                stroke="rgba(255,255,255,0.5)"
-                tick={{ fill: 'rgba(255,255,255,0.7)', fontSize: 12 }}
+                stroke={chartStrokeColor}
+                tick={{ fill: chartTextColor, fontSize: 12 }}
                 tickFormatter={(value) => formatCurrency(value)}
               />
               <Tooltip content={<CustomTooltip />} />
-              <Legend wrapperStyle={{ color: 'rgba(255,255,255,0.8)' }} />
+              <Legend wrapperStyle={{ color: chartLegendColor }} />
               <Area
                 type="monotone"
                 dataKey="cashAvailable"
@@ -607,22 +699,22 @@ export default function ChartAnalysisTab({
                     )
                   })}
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
                 <XAxis 
                   dataKey="date" 
-                  stroke="rgba(255,255,255,0.5)"
-                  tick={{ fill: 'rgba(255,255,255,0.7)', fontSize: 12 }}
+                  stroke={chartStrokeColor}
+                  tick={{ fill: chartTextColor, fontSize: 12 }}
                   angle={-45}
                   textAnchor="end"
                   height={60}
                 />
                 <YAxis 
-                  stroke="rgba(255,255,255,0.5)"
-                  tick={{ fill: 'rgba(255,255,255,0.7)', fontSize: 12 }}
+                  stroke={chartStrokeColor}
+                  tick={{ fill: chartTextColor, fontSize: 12 }}
                   tickFormatter={(value) => formatCurrency(value)}
                 />
                 <Tooltip content={<CustomTooltip />} />
-                <Legend wrapperStyle={{ color: 'rgba(255,255,255,0.8)' }} />
+                <Legend wrapperStyle={{ color: chartLegendColor }} />
                 {accounts.map((account) => {
                   const color = ACCOUNT_TYPE_COLORS[account.account_type] || CHART_COLORS.primary
                   return (
@@ -683,23 +775,23 @@ export default function ChartAnalysisTab({
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
                   <ComposedChart data={monthlyComparisonData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                    <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
                     <XAxis 
                       dataKey="month" 
-                      stroke="rgba(255,255,255,0.5)"
-                      tick={{ fill: 'rgba(255,255,255,0.7)', fontSize: 12 }}
+                      stroke={chartStrokeColor}
+                      tick={{ fill: chartTextColor, fontSize: 12 }}
                       angle={-45}
                       textAnchor="end"
                       height={60}
                       type="category"
                     />
                     <YAxis 
-                      stroke="rgba(255,255,255,0.5)"
-                      tick={{ fill: 'rgba(255,255,255,0.7)', fontSize: 12 }}
+                      stroke={chartStrokeColor}
+                      tick={{ fill: chartTextColor, fontSize: 12 }}
                       tickFormatter={(value) => formatCurrency(value)}
                     />
                     <Tooltip content={<CustomTooltip />} />
-                    <Legend wrapperStyle={{ color: 'rgba(255,255,255,0.8)' }} />
+                    <Legend wrapperStyle={{ color: chartLegendColor }} />
                     <Bar dataKey="avgCash" fill={CHART_COLORS.primary} name="Avg Cash Available" />
                     <Bar dataKey="avgBills" fill={CHART_COLORS.tertiary} name="Avg Bills Remaining" />
                   </ComposedChart>
@@ -718,11 +810,11 @@ export default function ChartAnalysisTab({
         <CardContent>
           <ResponsiveContainer width="100%" height={350}>
             <ComposedChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+              <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
               <XAxis 
                 dataKey="date" 
-                stroke="rgba(255,255,255,0.5)"
-                tick={{ fill: 'rgba(255,255,255,0.7)', fontSize: 12 }}
+                stroke={chartStrokeColor}
+                tick={{ fill: chartTextColor, fontSize: 12 }}
                 tickFormatter={formatDateTick}
                 angle={-45}
                 textAnchor="end"
@@ -731,18 +823,18 @@ export default function ChartAnalysisTab({
               />
               <YAxis 
                 yAxisId="left"
-                stroke="rgba(255,255,255,0.5)"
-                tick={{ fill: 'rgba(255,255,255,0.7)', fontSize: 12 }}
+                stroke={chartStrokeColor}
+                tick={{ fill: chartTextColor, fontSize: 12 }}
                 tickFormatter={(value) => formatCurrency(value)}
               />
               <YAxis 
                 yAxisId="right"
                 orientation="right"
-                stroke="rgba(255,255,255,0.5)"
-                tick={{ fill: 'rgba(255,255,255,0.7)', fontSize: 12 }}
+                stroke={chartStrokeColor}
+                tick={{ fill: chartTextColor, fontSize: 12 }}
               />
               <Tooltip content={<CustomTooltip />} />
-              <Legend wrapperStyle={{ color: 'rgba(255,255,255,0.8)' }} />
+              <Legend wrapperStyle={{ color: chartLegendColor }} />
               <Bar yAxisId="left" dataKey="cashPerWeek" fill={CHART_COLORS.primary} name="Weekly Capacity" />
               <Line 
                 yAxisId="left"
